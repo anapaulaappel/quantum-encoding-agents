@@ -40,7 +40,7 @@ Três agentes especializados em encoding, com personalidades distintas:
 | Agente | Nome | Para quem |
 |---|---|---|
 | `quantum_encoding` | QiskitAgent | Uso geral — recomenda + código sem pressuposto de audiência |
-| `qiskit_expert` | **Circuit** | Quem já conhece QML — resposta densa, métricas diretas, sem paternalism |
+| `qiskit_expert` | **Circuit** | Quem já conhece QML — resposta direta, métricas concretas, sem explicar o óbvio |
 | `qiskit_mentor` | **Quanta** | Quem está aprendendo — constrói intuição física antes do código |
 
 Mais dois agentes de suporte:
