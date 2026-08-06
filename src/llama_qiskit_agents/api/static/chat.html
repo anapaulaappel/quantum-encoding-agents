@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Encoding quântico — CSV</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e7e9ea; }
+    body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; }
+    textarea, input[type="file"] { width: 100%; box-sizing: border-box; }
+    textarea {
+      min-height: 10rem;
+      background: #16181c;
+      color: inherit;
+      border: 1px solid #38444d;
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    input[type="file"] {
+      padding: 0.5rem 0;
+      font-size: 0.9rem;
+    }
+    button[type="submit"] {
+      width: 100%;
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: #1d9bf0;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button[type="submit"]:hover:not(:disabled) { filter: brightness(1.08); }
+    button[type="submit"]:disabled { opacity: 0.55; cursor: not-allowed; }
+    label { font-size: 0.85rem; color: #8b98a5; display: block; margin: 1rem 0 0.35rem; }
+    .hint { font-size: 0.8rem; color: #8b98a5; margin-top: 0.25rem; line-height: 1.4; }
+    #out {
+      margin-top: 1.5rem;
+      white-space: pre-wrap;
+      background: #16181c;
+      border: 1px solid #38444d;
+      border-radius: 8px;
+      padding: 1rem;
+      min-height: 4rem;
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+    .err { color: #f4212e; }
+  </style>
+</head>
+<body>
+  <h1>Recomendação de encoding quântico</h1>
+  <p class="hint">Envie um CSV com colunas numéricas e descreva o problema e o que deseja fazer (ex.: classificação com QSVM, só preparar estado, clusterização). O texto é analisado junto com os dados.</p>
+
+  <form id="form">
+    <label for="csv">Arquivo CSV</label>
+    <input id="csv" name="file" type="file" accept=".csv,text/csv" required />
+
+    <label for="problem">Problema e objetivo</label>
+    <textarea
+      id="problem"
+      name="problem_description"
+      placeholder="Ex.: Tenho features contínuas e quero classificar com um variational quantum classifier. Ou: quero usar quantum kernel SVM para separar duas classes."
+      required
+    ></textarea>
+
+    <button type="submit" id="submit">Analisar e comparar encodings</button>
+  </form>
+
+  <label for="out">Resultado</label>
+  <div id="out" aria-live="polite">Preencha o formulário e envie.</div>
+
+  <script>
+    const API_BASE = '';
+    const form = document.getElementById('form');
+    const out = document.getElementById('out');
+    const submitBtn = document.getElementById('submit');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('csv');
+      const problem = document.getElementById('problem').value.trim();
+      if (!fileInput.files.length) {
+        out.innerHTML = '<span class="err">Selecione um arquivo CSV.</span>';
+        return;
+      }
+      if (!problem) {
+        out.innerHTML = '<span class="err">Descreva o problema e o que deseja fazer.</span>';
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      fd.append('problem_description', problem);
+      fd.append('shots', '512');
+
+      submitBtn.disabled = true;
+      out.textContent = 'Processando…';
+
+      try {
+        const r = await fetch(API_BASE + '/v1/compare/csv', { method: 'POST', body: fd });
+        const text = await r.text();
+        if (!r.ok) throw new Error(text || r.statusText);
+        out.textContent = text;
+      } catch (err) {
+        out.innerHTML = '<span class="err">' + String(err.message || err) + '</span>';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

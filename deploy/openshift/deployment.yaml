@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-qiskit-agents
+  namespace: openclaw
+  labels:
+    app: llama-qiskit-agents
+    app.kubernetes.io/part-of: quantum-stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llama-qiskit-agents
+  strategy:
+    type: RollingUpdate          # stateless: pode fazer rolling update
+  template:
+    metadata:
+      labels:
+        app: llama-qiskit-agents
+    spec:
+      containers:
+        - name: api
+          # Troque pela sua imagem após o build:
+          #   oc new-build --name=llama-qiskit-agents --binary -n openclaw
+          #   oc start-build llama-qiskit-agents --from-dir=. --follow -n openclaw
+          image: image-registry.openshift-image-registry.svc:5000/openclaw/llama-qiskit-agents:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "8080"
+            - name: CORS_ORIGINS
+              # Permite apenas o pod do OpenClaw chamar a API internamente.
+              # Troque pelo domínio real se precisar de acesso externo.
+              value: "http://localhost:18789,https://openclaw-openclaw.apps.<SEU_DOMINIO>"
+            # Llama Stack é opcional — o pipeline quantum funciona sem ele.
+            # Descomente se quiser conectar ao Llama Stack:
+            # - name: LLAMA_STACK_CLIENT_BASE_URL
+            #   value: "http://llama-stack.openclaw.svc.cluster.local:8321"
+            # - name: LLAMA_STACK_CLIENT_API_KEY
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: openclaw-secrets
+            #       key: LLAMA_STACK_CLIENT_API_KEY
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "500m"
+              # qiskit-aer compila circuitos em memória; 1Gi é o mínimo seguro
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: ["ALL"]

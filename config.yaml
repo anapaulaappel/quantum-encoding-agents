@@ -1,0 +1,11 @@
+inference:
+  providers:
+    - provider_id: ollama
+      provider_type: ollama
+      config:
+        host: http://localhost:11434
+
+models:
+  - model_id: llama3
+    provider_id: ollama
+

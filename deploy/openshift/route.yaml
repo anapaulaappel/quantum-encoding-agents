@@ -1,0 +1,23 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: llama-qiskit-agents
+  namespace: openclaw
+  labels:
+    app: llama-qiskit-agents
+    app.kubernetes.io/part-of: quantum-stack
+  annotations:
+    # A Route é opcional: só necessária se quiser acesso externo direto à API.
+    # O agente OpenClaw acessa via ClusterIP interno (sem passar pela Route).
+    haproxy.router.openshift.io/timeout: 120s   # simulações podem demorar
+spec:
+  to:
+    kind: Service
+    name: llama-qiskit-agents
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

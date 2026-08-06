@@ -1,0 +1,10 @@
+# Llama Stack Client (agentes) - pré-lançamento
+--pre
+llama_stack_client>=0.1.0
+
+# Qiskit (computação quântica + simulador)
+qiskit>=1.0
+qiskit-aer>=0.14
+
+# Variáveis de ambiente
+python-dotenv>=1.0

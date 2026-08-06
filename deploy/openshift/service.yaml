@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama-qiskit-agents
+  namespace: openclaw
+  labels:
+    app: llama-qiskit-agents
+    app.kubernetes.io/part-of: quantum-stack
+spec:
+  type: ClusterIP
+  selector:
+    app: llama-qiskit-agents
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
