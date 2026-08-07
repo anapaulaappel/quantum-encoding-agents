@@ -59,5 +59,20 @@ qiskitrc
 Thumbs.db
 
 # Logs
-*.log
 logs/
+
+# LaTeX build artifacts (keep sources, ignore generated files)
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.lof
+paper/*.lot
+paper/*.bbl
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+paper/*.zip
+paper/acmart.cls
+paper/ACM-Reference-Format.bst
