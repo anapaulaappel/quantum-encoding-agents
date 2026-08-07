@@ -1,0 +1,697 @@
+%%
+%% ARTICLE.tex — Quantum Encoding Agents
+%% ACM sigconf template (acmart class)
+%%
+%% Compile with:
+%%   pdflatex ARTICLE.tex
+%%   bibtex   ARTICLE
+%%   pdflatex ARTICLE.tex
+%%   pdflatex ARTICLE.tex
+%%
+%% Or on Overleaf: upload this file + references.bib and compile with pdfLaTeX.
+%%
+
+\documentclass[sigconf,nonacm]{acmart}
+
+%% ── Packages ───────────────────────────────────────────────────────────────
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{braket}          % Dirac notation: \ket{}, \bra{}, \braket{}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}        % \toprule, \midrule, \bottomrule
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{cleveref}
+
+%% ── Code listing style ─────────────────────────────────────────────────────
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{gray!8},
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  captionpos=b,
+  keywordstyle=\color{blue!70}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!60!black},
+  showstringspaces=false,
+  tabsize=2,
+}
+
+%% ── ACM metadata ───────────────────────────────────────────────────────────
+%% Remove or fill in when submitting to an actual ACM venue.
+
+\setcopyright{none}
+\acmDOI{}
+\acmISBN{}
+\acmConference[]{}{}{}
+\acmYear{2026}
+\copyrightyear{2026}
+
+%% ── CCS Concepts ───────────────────────────────────────────────────────────
+\begin{CCSXML}
+<ccs2012>
+ <concept>
+  <concept_id>10010147.10010178.10010179</concept_id>
+  <concept_desc>Computing methodologies~Quantum computing</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10010147.10010257.10010293.10010294</concept_id>
+  <concept_desc>Computing methodologies~Supervised learning</concept_desc>
+  <concept_significance>300</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10010147.10010178.10010219</concept_id>
+  <concept_desc>Computing methodologies~Natural language processing</concept_desc>
+  <concept_significance>300</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10002978.10003014.10003017</concept_id>
+  <concept_desc>Security and privacy~Access control</concept_desc>
+  <concept_significance>100</concept_significance>
+ </concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Computing methodologies~Quantum computing}
+\ccsdesc[300]{Computing methodologies~Supervised learning}
+\ccsdesc[300]{Computing methodologies~Natural language processing}
+\ccsdesc[100]{Security and privacy~Access control}
+
+%% ── Author ─────────────────────────────────────────────────────────────────
+\author{Ana Paula Appel}
+\email{aappel@redhat.com}
+\affiliation{%
+  \institution{Red Hat, Inc.}
+  \country{USA}
+}
+
+%% ── Title ──────────────────────────────────────────────────────────────────
+\title{Quantum Encoding Agents: A Natural Language Interface for\\
+       Data Embedding Strategy Selection in Quantum Machine Learning}
+
+%% ── Keywords ───────────────────────────────────────────────────────────────
+\keywords{Quantum Machine Learning, Quantum Feature Maps, Data Encoding,
+          AI Agents, NISQ Hardware, OpenShift, Natural Language Interface}
+
+%% ═══════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+\maketitle
+
+%% ── Abstract ───────────────────────────────────────────────────────────────
+\begin{abstract}
+Selecting an appropriate data encoding strategy is one of the most consequential
+and least-tooled decisions in Quantum Machine Learning (QML) pipelines. The choice
+of quantum feature map determines the structure of the Hilbert space into which
+classical data is embedded, directly shaping the expressibility of quantum kernels,
+the trainability of variational circuits, and the feasibility of execution on
+near-term hardware. Despite its central role, encoding selection is rarely addressed
+systematically: practitioners typically default to a single strategy---most often
+angle encoding---without analyzing how the structural characteristics of their data
+interact with the properties of each encoding family. This paper presents
+\textbf{Quantum Encoding Agents}, an open-source system that reformulates encoding
+selection as a natural language interaction. Given a dataset and an optional
+description of the QML task, the system analyzes the data profile, applies a
+hardware-aware recommendation policy grounded in the critical gate error threshold
+$p^{*} \approx 10^{-3}$, generates a complete copyable Qiskit circuit, produces a
+natural language justification in the user's language (Portuguese or English), and
+computes the quantum kernel matrix with Kernel-Target Alignment scoring. The system
+is implemented as a FastAPI microservice, deployed on Red Hat OpenShift with NVIDIA
+OpenShell sandbox isolation, and exposed through OpenClaw agents with distinct
+epistemic personalities calibrated to different levels of user expertise. Evaluation
+confirms that the system correctly selects among seven encoding families---amplitude,
+angle, dense angle, IQP, basis, data re-uploading, and custom feature map---under
+realistic NISQ hardware constraints, and that KTA scores discriminate between
+encodings on benchmark datasets.
+\end{abstract}
+
+%% ═══════════════════════════════════════════════════════════════════════════
+\section{Introduction}
+
+The practical adoption of Quantum Machine Learning faces a fundamental bottleneck
+that precedes model training: the problem of quantum data encoding. Before any
+quantum classifier, kernel method, or variational circuit can operate, classical
+data must be mapped into quantum states. This mapping---the encoding or feature
+map---is not a neutral preprocessing step. It defines the geometry of the state
+space, the structure of correlations captured between features, and the depth and
+qubit count of the resulting circuit. Different encodings impose radically different
+tradeoffs: amplitude encoding compresses $n$ features into $\lceil \log_2 n \rceil$
+qubits but requires a state preparation circuit of exponential depth; angle encoding
+produces shallow circuits with one qubit per feature but limited expressibility;
+IQP encoding~\cite{havlicek2019} captures cross-feature correlations through
+diagonal unitaries and has strong theoretical guarantees for quantum kernels, but at
+greater circuit depth.
+
+Despite the critical nature of this choice, the QML literature offers little
+guidance on encoding selection as a function of data characteristics. Practitioners
+encounter a combinatorial decision problem: seven or more encoding families, each
+with different qubit efficiency, circuit depth, hardware sensitivity, and affinity
+for different QML algorithms, must be matched against a dataset whose relevant
+properties---dimensionality, value type, distribution, sign---interact with the
+encoding in non-obvious ways. The seminal survey by Sammartino~\cite{sammartino2026},
+reviewing 66 papers from 2017 to 2026, identifies this as the most underaddressed
+problem in applied QML, formalizes six encoding families, and derives a critical gate
+error rate threshold $p^{*} \approx 10^{-3}$ above which deep encodings become
+impractical on NISQ hardware.
+
+This paper addresses the encoding selection problem through a different lens: rather
+than proposing a new encoding or a new theoretical framework, I build a practical
+agent system that makes existing knowledge actionable. I make the following
+contributions:
+
+\begin{enumerate}
+  \item \textbf{A hardware-aware encoding recommendation engine} that applies the
+    $p^{*}$ threshold from~\cite{sammartino2026}, accounting for gate error rate,
+    circuit depth budget, qubit count, and chip connectivity topology.
+
+  \item \textbf{Seven implemented encoding strategies} in Qiskit, including
+    dense-angle encoding~\cite{sammartino2026} and IQP encoding~\cite{havlicek2019},
+    which were identified as underrepresented in applied tooling.
+
+  \item \textbf{A natural language explanation layer} that generates structured
+    justifications in Portuguese and English, citing concrete metrics (number of
+    qubits, circuit depth, Kernel-Target Alignment) derived from actual simulation
+    results.
+
+  \item \textbf{A quantum kernel evaluation endpoint} that computes
+    $K[i,j] = |\langle\phi(x_i)|\phi(x_j)\rangle|^2$ for a dataset, returns KTA
+    scores, and generates a heatmap visualization---enabling encoding quality
+    assessment before any classifier training.
+
+  \item \textbf{A multi-agent deployment architecture} on Red Hat OpenShift with
+    NVIDIA OpenShell security sandboxes, exposing three OpenClaw agents with distinct
+    communicative personalities for expert and novice audiences.
+
+  \item \textbf{A Kubeflow Pipeline} for Red Hat OpenShift AI that orchestrates the
+    full workflow---data analysis, encoding recommendation, comparison, kernel
+    evaluation, and MLflow artifact logging---as a reproducible five-stage DAG.
+\end{enumerate}
+
+The system is released as open source.\footnote{
+  API: \url{https://github.com/anapaulaappel/quantum-encoding-agents};
+  Agents: \url{https://github.com/anapaulaappel/openclaw-quantum-agents}.
+  All code, policies, agent configurations, and the Kubeflow pipeline were
+  developed and are maintained by the author.}
+
+%% ═══════════════════════════════════════════════════════════════════════════
+\section{Related Work}
+
+\subsection{Quantum Data Encoding Strategies}
+
+The theoretical landscape of quantum data encoding has been shaped by a sequence of
+foundational papers. Schuld and Killoran~\cite{schuld2019} established the
+connection between quantum feature maps and kernel methods, showing that quantum
+circuits define kernels on data through the inner product of encoded states in
+Hilbert space. This framing---encoding as an implicit kernel---is the basis for all
+kernel-based QML methods.
+
+Havl\'i\v{c}ek et al.~\cite{havlicek2019} operationalized this idea with a concrete
+circuit construction: the ZZ feature map, which applies Hadamard layers followed by
+diagonal Pauli rotations encoding both linear ($x_i^2$) and cross-product
+($x_i \cdot x_j$) terms. This circuit, equivalent to what we term IQP
+(Instantaneous Quantum Polynomial) encoding, was demonstrated on IBM quantum
+hardware and showed experimental advantage over classical SVMs on a constructed
+classification task.
+
+P\'erez-Salinas et al.~\cite{perezsalinas2020} introduced data re-uploading,
+departing from the one-shot encoding paradigm. In their framework, classical data is
+inserted into the circuit multiple times across layers, interleaved with trainable
+parameters. Data re-uploading has become the de facto encoding for variational
+quantum classifiers and quantum neural networks.
+
+LaRose and Coyle~\cite{larose2020} conducted the first systematic comparative study
+of encoding strategies across multiple datasets and noise conditions, establishing
+that no single encoding dominates and that the optimal choice is dataset-dependent.
+Their work motivates the need for an automated selection mechanism---a gap this
+system addresses.
+
+The most comprehensive treatment is Sammartino's 2026 survey~\cite{sammartino2026},
+which reviews 66 papers from 2017 to 2026, classifies encodings into six families,
+and derives practical selection guidelines. Crucially, Sammartino formalizes the
+critical gate error threshold: for hardware with gate error rate
+$p \geq p^{*} \approx 10^{-3}$, deep encodings (amplitude, IQP, custom feature map)
+accumulate noise faster than their expressibility advantage compensates, making
+shallow encodings (angle, dense angle, data re-uploading) preferable. Dense-angle
+encoding---which packs two features per qubit via
+$R_y(x_{2i}) \cdot R_z(x_{2i+1})$---is identified as the most underused encoding
+family in applied QML despite its favorable depth-qubit tradeoff.
+
+\subsection{Encoding as an Implicit Kernel}
+
+A result fundamental to the theoretical grounding of this system is Schuld's 2021
+theorem~\cite{schuld2021_kernel}: every supervised quantum model that encodes data
+into a quantum state $|\phi(x)\rangle$ and measures an observable is mathematically
+equivalent to a kernel support vector machine with kernel:
+\begin{equation}
+  K(x, x') = |\langle\phi(x)|\phi(x')\rangle|^2.
+  \label{eq:kernel}
+\end{equation}
+This equivalence has a decisive practical implication: \emph{``the way that data is
+encoded into quantum states is the main ingredient that can potentially set quantum
+models apart from classical machine learning models''}~\cite{schuld2021_kernel}.
+Furthermore, kernel-based training---which is what QSVM performs directly---is
+provably at least as good as variational circuit training for the same encoding. The
+choice of encoding is therefore not a preprocessing decision; it is the core
+modeling decision, equivalent to choosing a kernel in classical SVM. This system
+makes this choice explicit and measurable---the Kernel-Target Alignment (KTA) score
+computed by the \texttt{/v1/kernel} endpoint is a direct, label-aware evaluation of
+the implicit kernel defined by any encoding on the actual data.
+
+\subsection{Trainability and Barren Plateaus}
+
+The trainability of quantum circuits is a central concern for encoding choices used
+in variational algorithms. McClean et al.~\cite{mcclean2018} demonstrated that
+randomly initialized quantum circuits exhibit barren plateaus: exponentially
+vanishing gradients that make training infeasible beyond moderate qubit counts.
+Cerezo et al.~\cite{cerezo2021} surveyed the landscape of variational quantum
+algorithms, establishing data re-uploading as the preferred input encoding for QNNs
+and VQCs due to its per-layer data injection that maintains gradient flow.
+
+\subsection{Expressibility, Entanglement, and the Encoding Tradeoff}
+
+Sim, Johnson and Aspuru-Guzik~\cite{sim2019} define \emph{expressibility} as the
+deviation of a parameterized quantum circuit's output distribution from the Haar
+measure. Their key result: shallow circuits have low expressibility and are confined
+to structured submanifolds of the state space, which may be insufficient to separate
+classes. This is the complementary risk to the barren plateau: too-shallow encodings
+underfit in Hilbert space, while too-deep circuits become untrainable due to
+vanishing gradients~\cite{mcclean2018}. Sammartino~\cite{sammartino2026} adds the
+third axis: above $p^{*} \approx 10^{-3}$, the depth budget is set by hardware
+decoherence, not by expressibility requirements.
+
+Larocca et al.~\cite{larocca2023} further establish that over-parameterized quantum
+neural networks undergo a phase transition from a barren plateau regime to a
+trainable regime as the number of parameters exceeds a critical threshold, directly
+linking encoding circuit depth to parameter count and trainability.
+
+\subsection{Quantum Advantage and Scope of NISQ-Era QML}
+
+Huang et al.~\cite{huang2022} proved exponential quantum advantage in a specific
+learning task---predicting properties of quantum physical systems from quantum
+measurements---demonstrated on 40-qubit superconducting hardware. However, this
+advantage is task-specific: it applies when the data itself is quantum in origin,
+not when encoding classical tabular data into quantum circuits. Huang, Kueng and
+Preskill~\cite{huang2021} establish complementary information-theoretic bounds
+showing that classical ML can match quantum ML on average over input distributions,
+but quantum advantage is possible worst-case.
+
+For classical datasets on NISQ hardware---the regime this system targets---quantum
+advantage over classical methods has not been proven in general. Bowles, Ahmed and
+Schuld~\cite{bowles2024} show, in a large-scale study across 12 QML models and 160
+datasets, that classical baselines frequently match or outperform quantum classifiers
+at current qubit scales, underscoring that encoding evaluation is not optional but
+essential. This system is therefore designed as a NISQ-era engineering tool for
+informed encoding selection, not as a claim of general quantum supremacy.
+
+\subsection{NISQ vs.\ Fault-Tolerant Quantum Computing}
+
+The \texttt{hardware\_profile} constraints in this system encode NISQ-era realities
+that will shift significantly in the fault-tolerant regime. On current NISQ
+devices---characterized by gate error rates of $10^{-3}$ to $10^{-2}$, qubit counts
+of 10--400, and no error correction---circuit depth is the primary engineering
+constraint. In the fault-tolerant era, with logical qubits suppressing error to
+arbitrarily low levels, this constraint disappears: amplitude encoding's exponential
+qubit compression becomes viable, and the encoding choice is driven purely by
+expressibility and task alignment. This design is forward-compatible: passing
+\texttt{gate\_error\_rate: 0.0} returns recommendations based on expressibility
+alone; passing \texttt{gate\_error\_rate: 5e-3} (IBM Eagle) returns
+hardware-adjusted recommendations.
+
+\subsection{AI Agents for Scientific Tooling}
+
+The use of LLM-based agents as interfaces for scientific computing tools is an
+emerging paradigm. To my knowledge, this is the first system to deploy
+multi-personality LLM agents specifically for quantum encoding recommendation.
+
+The OpenClaw agent framework~\cite{openclaw2026} provides the infrastructure for
+agent deployment with persistent memory (via \texttt{MEMORY.md}), user calibration
+(via \texttt{BOOTSTRAP.md} and \texttt{USER.md}), and skill encapsulation.
+
+\subsection{Secure Agent Deployment}
+
+NVIDIA OpenShell~\cite{nvidia2026} addresses agent security through out-of-process
+policy enforcement: each agent runs in an isolated sandbox governed by a YAML policy
+that constrains filesystem access and network endpoints at HTTP method granularity,
+enforced by Landlock LSM and seccomp. The policy engine validates rules using the Z3
+SMT solver before application. In this deployment, each agent receives a distinct
+policy: the expert agent (Circuit) is restricted to the Qiskit API and LLM endpoints
+only; the mentor agent (Quanta) additionally has read-only access to arXiv and Qiskit
+documentation.
+
+%% ═══════════════════════════════════════════════════════════════════════════
+\section{Problem Description}
+
+\subsection{The QML Training Pipeline}
+
+To position the encoding selection problem, I first establish the full QML training
+loop in which it occurs. A supervised quantum machine learning pipeline consists of
+five stages executed iteratively:
+
+\begin{enumerate}
+  \item \textbf{Data Encoding}: $U(x)|0\rangle^{\otimes n} \rightarrow |\phi(x)\rangle$
+        \hfill \emph{(this paper)}
+  \item \textbf{Parameterized Ansatz}: $V(\theta)|\phi(x)\rangle \rightarrow |\psi(x,\theta)\rangle$
+  \item \textbf{Measurement}: $\langle\psi(x,\theta)|M|\psi(x,\theta)\rangle \rightarrow \hat{y}$
+  \item \textbf{Classical Loss}: $\mathcal{L}(\hat{y}, y) \rightarrow \mathbb{R}$
+  \item \textbf{Classical Optimizer}: $\theta \leftarrow \theta - \eta\nabla\mathcal{L}$
+        (then repeat)
+\end{enumerate}
+
+The encoding layer (stage 1) is fixed for the duration of training---it is a
+hyperparameter of the model, not a trainable parameter. A poorly chosen encoding
+defines a kernel that cannot linearly separate the classes in Hilbert space, no
+matter how many training iterations the optimizer runs. This system operates at
+stage 1, with KTA providing a measurement of whether the chosen encoding creates a
+Hilbert space geometry useful for the loss at stage 4.
+
+For quantum kernel methods (QSVM), stages 2--5 are replaced by classical SVM
+training on the kernel matrix $K[i,j] = |\langle\phi(x_i)|\phi(x_j)\rangle|^2$---
+which is exactly what the \texttt{/v1/kernel} endpoint computes. In this case, the
+encoding is the \emph{entire} model specification, reinforcing the centrality of
+stage 1.
+
+\subsection{The Encoding Selection Problem}
+
+Let $\mathcal{D} = \{x_i\}_{i=1}^N \subset \mathbb{R}^d$ be a classical dataset
+with $N$ samples and $d$ features. A quantum encoding is a parameterized map
+$\phi: \mathbb{R}^d \rightarrow \mathcal{H}$ from the feature space to a Hilbert
+space $\mathcal{H}$ of dimension $2^n$, implemented as a quantum circuit $U(x)$
+acting on $n$ qubits such that $|\phi(x)\rangle = U(x)|0\rangle^{\otimes n}$.
+
+The encoding selection problem is: given $\mathcal{D}$ and an optional QML task
+specification $\mathcal{T}$ (classification, kernel method, variational circuit,
+etc.)\ and hardware constraints $\mathcal{H}\!w$ (gate error rate, qubit count,
+connectivity topology), select an encoding $\phi^{*}$ that maximizes downstream task
+performance subject to hardware feasibility.
+
+This problem is ill-posed for two reasons. First, the downstream task performance
+depends on the full learning pipeline, not just the encoding; it cannot be evaluated
+without training a model. Second, the interaction between data characteristics and
+encoding properties is non-linear and high-dimensional.
+
+\subsection{Current Practice and Its Limitations}
+
+In practice, encoding selection is rarely principled. A survey of QML
+implementations in the literature reveals that the majority use angle encoding as a
+default, regardless of dataset structure. However, this choice ignores:
+
+\begin{itemize}
+  \item \textbf{Dimensionality}: for $d > 10$ features, angle encoding requires $d$
+    qubits. Dense-angle encoding achieves the same depth with $\lceil d/2 \rceil$
+    qubits.
+
+  \item \textbf{Task alignment}: for QSVM, encodings without entanglement define
+    kernels with limited expressibility. IQP and custom feature map encodings define
+    richer kernels.
+
+  \item \textbf{Hardware noise}: above $p^{*} \approx 10^{-3}$, amplitude encoding's
+    deep state preparation circuit accumulates noise faster than its qubit compression
+    advantage is worth. On IBM Eagle hardware ($p \approx 5 \times 10^{-3}$), the
+    effective circuit depth after error accumulation can reduce the signal-to-noise
+    ratio below classification threshold.
+
+  \item \textbf{Data type}: basis encoding, the natural choice for binary or
+    categorical data, is systematically ignored when practitioners default to angle
+    encoding for all data types.
+\end{itemize}
+
+\subsection{The Accessibility Gap}
+
+Beyond the technical selection problem, there is an accessibility gap: the knowledge
+required to make principled encoding choices---distributed across a dozen papers
+published between 2018 and 2026, requiring familiarity with quantum information
+theory, circuit complexity, and NISQ hardware characteristics---is not accessible to
+the ML practitioner approaching QML for the first time.
+
+This gap manifests in two distinct user profiles. The \textbf{QML practitioner}
+(expert) needs dense, metric-first information: encoding name, circuit depth, qubit
+count, KTA score, and a reference to the relevant paper. The \textbf{ML practitioner
+approaching QML} (learner) needs progressive disclosure: physical intuition before
+mathematics, the Bloch sphere before Dirac notation, a concrete analogy before a
+formal definition. Current tools address neither profile. The system I present
+bridges this gap through specialized agents calibrated to each profile.
+
+%% ═══════════════════════════════════════════════════════════════════════════
+\section{Quantum Encoding Agents: System Design}
+
+\subsection{Architecture Overview}
+
+The system consists of three loosely coupled layers: (1) an OpenClaw agent gateway
+with LLM backend (Qwen2.5-Coder-14B via Ollama or Llama-3.2-3B via vLLM on
+OpenShift), (2) the \texttt{llama-qiskit-agents} FastAPI microservice exposing the
+quantum pipeline, and (3) the NVIDIA OpenShell security layer enforcing per-agent
+sandbox policies. The microservice is stateless and can be called directly via HTTP
+independently of the agent framework.
+
+\subsection{Data Profile Analysis}
+
+The first processing step is structured data profiling. Given input in any of three
+forms---a numpy array, a CSV file, or a natural language description---the system
+extracts a \texttt{DataProfile} dataclass with seven fields:
+\texttt{n\_samples}, \texttt{n\_features}, \texttt{is\_binary},
+\texttt{is\_categorical}, \texttt{is\_continuous}, \texttt{has\_negative}, and
+\texttt{description}. For text descriptions, keyword detection in both Portuguese
+and English maps phrases to profile flags.
+
+\subsection{The Seven Encoding Strategies}
+
+The system implements seven encoding families as Qiskit \texttt{QuantumCircuit}
+objects. Table~\ref{tab:encodings} summarizes their properties.
+
+\begin{table}[h]
+\caption{Quantum encoding strategies implemented in the system.}
+\label{tab:encodings}
+\begin{tabular}{lllp{3.2cm}l}
+\toprule
+\textbf{Encoding} & \textbf{Qubits} & \textbf{Depth} &
+\textbf{Recommended for} & \textbf{Key gates} \\
+\midrule
+Amplitude       & $\lceil\log_2 n\rceil$ & $O(2^n)$  & Large vectors, qubit-constrained & \texttt{StatePreparation} \\
+Angle           & $d$                    & $1$        & $d\!\leq\!4$, continuous         & $R_y(x_i)$ \\
+Dense Angle~\cite{sammartino2026} & $\lceil d/2\rceil$ & $2$ & $5\!\leq\!d\!\leq\!12$, contin.\ & $R_y R_z$ per qubit \\
+IQP~\cite{havlicek2019} & $d$            & ${\sim}3d$ & $8\!\leq\!d\!\leq\!16$, kernels  & $H{+}R_z(x_i^2){+}R_{zz}$ \\
+Basis           & $d$                    & ${\leq}d$  & Binary / categorical             & $X$ per 1-bit \\
+Data Re-upl.~\cite{perezsalinas2020} & $d$ & ${\sim}4d$ & VQC, QNN              & $R_y{\times}L + CX$ chain \\
+Custom FM       & $d$                    & ${\sim}3d$ & QSVM, arbitrary kernels          & $H{+}R_z{+}R_y{+}CZ$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Dense-angle encoding}~\cite{sammartino2026} achieves half the qubit count of
+standard angle encoding at depth 2 by packing two features per qubit:
+\begin{equation}
+  U_{\mathrm{DA}}(x)\,|0\rangle^{\otimes \lceil d/2 \rceil}
+  = \bigotimes_{i=0}^{\lceil d/2 \rceil - 1}
+    R_z(x_{2i+1})\,R_y(x_{2i})\,|0\rangle_i.
+\end{equation}
+
+\textbf{IQP encoding}~\cite{havlicek2019} is implemented without a
+\texttt{qiskit-machine-learning} dependency through manual decomposition of
+$R_{zz}(\theta) = CX \cdot R_z(\theta) \cdot CX$:
+\begin{equation}
+  U_{\mathrm{IQP}}(x)
+  = H^{\otimes d}
+    \cdot \prod_i R_z(x_i^2)
+    \cdot \prod_{i<j} R_{zz}(x_i x_j)
+    \cdot H^{\otimes d}.
+\end{equation}
+Only adjacent pairs $(i, i{+}1)$ are connected, keeping circuit depth polynomial in
+$d$ and compatible with linear and heavy-hex topologies.
+
+\subsection{Hardware-Aware Recommendation Policy}
+
+The recommendation pipeline has two stages: data-driven base selection and
+hardware-constrained refinement.
+
+\textbf{Base selection} applies a priority decision tree over the
+\texttt{DataProfile}: (1) binary, $d \leq 16$ $\rightarrow$ \texttt{basis};
+(2) continuous, $d \leq 4$ $\rightarrow$ \texttt{angle};
+(3) continuous, $4 < d \leq 12$, no negatives $\rightarrow$ \texttt{dense\_angle};
+(4) single sample, $d \geq 4$ $\rightarrow$ \texttt{amplitude};
+(5) continuous, $8 < d \leq 16$ $\rightarrow$ \texttt{iqp};
+(6) continuous, $d > 16$ $\rightarrow$ \texttt{custom\_feature\_map};
+(7) default $\rightarrow$ \texttt{angle}.
+
+\textbf{Task refinement} overrides based on the QML task: kernel methods and QSVM
+elevate to \texttt{custom\_feature\_map}; variational methods prefer
+\texttt{data\_reuploading}; binary classification with binary data uses
+\texttt{basis}.
+
+\textbf{Hardware refinement} applies the $p^{*}$ threshold from
+Sammartino~\cite{sammartino2026}. For any \texttt{HardwareProfile} with
+\texttt{gate\_error\_rate} $\geq 10^{-3}$, deep encodings
+(\texttt{amplitude}, \texttt{custom\_feature\_map}, \texttt{iqp}) are replaced by
+\texttt{dense\_angle} ($d > 4$) or \texttt{angle} ($d \leq 4$). Additionally,
+\texttt{connectivity: heavy-hex} or \texttt{linear} triggers a SWAP overhead
+warning for \texttt{custom\_feature\_map}, and \texttt{max\_depth\_budget} triggers
+a depth feasibility warning.
+
+\subsection{Natural Language Explanation Generation}
+
+The explanation layer generates a four-paragraph structured narrative in the
+detected language (Portuguese or English), each paragraph citing concrete values
+from the \texttt{DataProfile} and \texttt{SimulationResult}: (1) data description,
+(2) encoding justification with geometric intuition, (3) circuit metrics with NISQ
+compatibility assessment, and (4) comparative analysis of alternatives with concrete
+depth and qubit differences. Language detection uses vocabulary overlap between the
+input text and Portuguese/English marker sets.
+
+\subsection{Quantum Kernel Evaluation}
+
+For datasets where classification labels are available, the system computes the
+quantum kernel matrix $K \in [0,1]^{N \times N}$:
+\begin{equation}
+  K[i,j] = |\langle\phi(x_i)|\phi(x_j)\rangle|^2.
+\end{equation}
+Statevectors are computed using the \texttt{StatevectorSimulator} (exact, without
+measurement shots) and inner products are computed classically. The
+Kernel-Target Alignment is computed as:
+\begin{equation}
+  \mathrm{KTA}(K, y)
+  = \frac{\langle K,\, yy^{\top} \rangle_F}
+         {\|K\|_F \cdot \|yy^{\top}\|_F},
+\end{equation}
+where $y \in \{-1, +1\}^N$ is the label vector. KTA provides a label-aware measure
+of how well the encoding separates classes in Hilbert space, independently of any
+trained classifier. The result is returned as a JSON matrix, a heatmap visualization
+(viridis colormap, per-class tick coloring), and a natural language caption.
+
+In a preliminary evaluation on a synthetic two-class dataset ($N=4$, $d=2$), angle
+encoding achieved KTA $= 0.701$ while custom feature map achieved KTA $= 0.114$,
+demonstrating that richer encodings do not necessarily produce better-aligned kernels
+and that empirical evaluation via KTA is essential before committing to a training
+pipeline.
+
+\subsection{Bloch Sphere Visualization}
+
+For encodings with $n \leq 6$ qubits, the system optionally captures the statevector
+before measurement and renders the Bloch sphere representation of each qubit's
+marginal state using \texttt{plot\_bloch\_multivector}. The resulting PNG
+(base64-encoded) accompanies the recommendation when \texttt{include\_bloch: true}
+is set in the request, providing geometric intuition for what the encoding does to
+each data point.
+
+\subsection{Agent Personalities and the Role of SOUL.md}
+
+Three OpenClaw agents expose the recommendation system through distinct communicative
+registers. \textbf{QiskitAgent} (\texttt{quantum\_encoding}) is the general-purpose
+agent. \textbf{Circuit} (\texttt{qiskit\_expert}) is calibrated for QML
+practitioners: its \texttt{SOUL.md} instructs it to presuppose familiarity with key
+concepts, respond in three dense blocks (encoding name, metrics, rationale), never
+explain superposition, and present trade-offs as two objective sides without
+choosing. \textbf{Quanta} (\texttt{qiskit\_mentor}) is calibrated for learners: its
+\texttt{SOUL.md} prohibits the Schr\"odinger's cat analogy (which lies) and mandates
+physical intuition before mathematics---the Bloch sphere before Dirac notation. Both
+agents perform a calibration ritual on first session (\texttt{BOOTSTRAP.md}) to
+populate \texttt{USER.md} with a persistent user profile.
+
+\subsection{Skill Architecture}
+
+Two shared skills encapsulate reusable behavior across all agents.
+\texttt{\$qiskit-api} documents the \texttt{/v1/recommend/explain} endpoint as a
+\texttt{SKILL.md} file, eliminating documentation duplication and ensuring
+consistent behavior when the API evolves. \texttt{\$circuit-review} provides a
+four-step protocol for reviewing an existing circuit pasted by the user: identify
+the encoding, extract metrics, call \texttt{/v1/compare} for benchmark, and issue
+one of three verdicts (keep / optimize / replace) with a technical rationale.
+
+\subsection{Security Architecture (OpenShell)}
+
+Each agent runs inside a dedicated NVIDIA OpenShell sandbox governed by a YAML
+policy validated by the Z3 SMT solver. The policies enforce least-privilege at HTTP
+method granularity: Circuit (expert) has access limited to
+\texttt{qiskit-api:8080} (read-write) and the LLM endpoint (POST only); Quanta
+(mentor) additionally has read-only access to \texttt{arxiv.org} and
+\texttt{docs.quantum.ibm.com}; QiskitAgent (general) includes write access to
+\texttt{/tmp} for CSV uploads. Binaries are specified as objects with \texttt{path}
+keys, enabling per-binary policy enforcement through Landlock LSM.
+
+\subsection{Kubeflow Pipeline for RHOAI}
+
+The full workflow is codified as a Kubeflow Pipelines v2 DAG deployable on Red Hat
+OpenShift AI~\cite{rhoai2026}: (1) \texttt{analyze\_data} via
+\texttt{POST /v1/analyze}, (2) \texttt{recommend\_encoding} via
+\texttt{POST /v1/recommend/explain}, (3) \texttt{compare\_encodings} via
+\texttt{POST /v1/compare}, (4) \texttt{compute\_kernel} via \texttt{POST /v1/kernel}
+(when labels are provided), and (5) \texttt{log\_to\_mlflow}~\cite{zaharia2018}
+(parameters, metrics, heatmap, Bloch sphere visualization, generated Qiskit code).
+The pipeline accepts hardware profile parameters that propagate to the
+recommendation engine, enabling reproducible NISQ-aware experiments.
+
+%% ═══════════════════════════════════════════════════════════════════════════
+\section{Discussion}
+
+\subsection{The Role of KTA in Practice}
+
+My preliminary results suggest that KTA is a more reliable pre-training signal than
+circuit expressibility alone. Angle encoding (KTA $= 0.701$) outperformed the
+custom feature map (KTA $= 0.114$) on the test dataset despite the latter's greater
+theoretical richness. This confirms LaRose and Coyle's finding~\cite{larose2020}
+that no encoding universally dominates, and motivates the design approach: rather
+than recommending based on theoretical properties alone, I compute KTA on the actual
+data and present the score alongside the recommendation.
+
+\subsection{Limits of Text-Based Encoding Selection}
+
+The natural language input path---inferring data profile from a description---has
+inherent limitations. Keyword detection can misclassify ambiguous descriptions. For
+production use, numerical data or CSV upload should be preferred; the text path is
+primarily useful for initial exploration and for the conversational interface.
+
+\subsection{Agent Personality as an Engineering Artifact}
+
+The \texttt{SOUL.md}-based personality specification is a form of behavioral
+engineering that sits between prompt engineering and agent architecture. Unlike a
+system prompt, \texttt{SOUL.md} is persistent (injected every session), versioned
+in git, and testable: a response from Circuit that begins with ``Great question!''
+violates the soul specification and can be detected in evaluation. This framing---
+soul as contract---enables more systematic quality assurance of agent behavior than
+ad-hoc prompting.
+
+\subsection{OpenShell Policy Design as Security-by-Data-Profile}
+
+The assignment of different network permissions to different agents based on their
+communicative role is a novel security design pattern: \textbf{policy as a function
+of agent persona}. Quanta requires external internet access (arXiv, Qiskit docs)
+because its role is pedagogical and citation-heavy. Circuit does not, because
+experts are expected to know the literature. This reflects the insight that the
+minimum necessary privilege of an AI agent is determined not just by its technical
+function but by its communicative purpose.
+
+%% ═══════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+
+I presented Quantum Encoding Agents, a system that addresses the encoding selection
+problem in Quantum Machine Learning through a combination of hardware-aware
+recommendation logic, natural language generation, quantum kernel evaluation, and
+specialized AI agents calibrated to different user expertise levels. The system is
+grounded in the theoretical framework of Sammartino~\cite{sammartino2026} and
+Havl\'i\v{c}ek et al.~\cite{havlicek2019}, implements seven encoding families
+including the underused dense-angle encoding, and provides the first open-source
+implementation of KTA-based encoding quality assessment via a REST API.
+
+The multi-agent architecture demonstrates that AI agents deployed for scientific
+tools can and should have distinct communicative personalities calibrated to their
+user populations---not as a cosmetic feature, but as a substantive design choice
+that determines what information to surface, in what order, and with what degree of
+assumed prior knowledge. The security architecture extends this idea: agent policy
+is a function of agent role, not just of agent function.
+
+Future work includes: (i) integration with IBM Quantum real hardware via
+\texttt{QiskitRuntimeService} for empirical NISQ validation; (ii) the Q-Tucker
+shallow state preparation~\cite{qtuckerarxiv} as an alternative amplitude encoding
+with $O(n)$ depth; (iii) the Quantum Spectral Model~\cite{qsmarxiv} as an adaptive
+encoding whose frequency spectrum is conditioned on the input; and (iv) a
+KTA-guided encoding search that evaluates multiple candidates and returns the one
+with the highest alignment score.
+
+%% ═══════════════════════════════════════════════════════════════════════════
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}
