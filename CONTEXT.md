@@ -217,6 +217,6 @@ python scripts/run_quantum_example.py
 - [x] **A2** — `hardware_profile` NISQ-aware (p* threshold)
 - [x] **B1** — Bloch sphere visualization (`matplotlib` + statevector, commit 7632972)
 - [x] **B2** — `POST /v1/kernel` (FidelityStatevectorKernel + heatmap, commit 738b8ad)
-- [ ] **C1** — Kubeflow Pipeline para RHOAI
+- [x] **C1** — Kubeflow Pipeline para RHOAI (deploy/rhoai/)
 
 Referências chave: arXiv:2606.05387 (Sammartino survey), Nature 2019 (Havlíček kernel).

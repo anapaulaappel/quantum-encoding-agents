@@ -192,6 +192,36 @@ python3 scripts/run_encoding_agent.py --tradeoffs-only
 
 ---
 
+## Kubeflow Pipeline (RHOAI)
+
+Pipeline de 5 etapas para Red Hat OpenShift AI com Data Science Pipelines:
+
+```
+CSV → analyze → recommend → compare → kernel(KTA) → MLflow log
+```
+
+```bash
+cd deploy/rhoai
+
+# Compilar o pipeline YAML
+python pipeline.py
+
+# Submeter ao cluster RHOAI
+DSP_HOST=$(oc get route -n rhoai-dsp data-science-pipelines-api -o jsonpath='{.spec.host}')
+python submit.py \
+  --dsp-endpoint "https://$DSP_HOST" \
+  --csv dados.csv \
+  --labels "0,0,1,1" \
+  --task kernel \
+  --alg QSVM \
+  --hw-error 5e-3 \
+  --connectivity heavy-hex
+```
+
+Ver guia completo em [`deploy/rhoai/RHOAI-PIPELINE.md`](deploy/rhoai/RHOAI-PIPELINE.md).
+
+---
+
 ## Deploy no OpenShift
 
 Ver guia completo em [`openclaw-openshift/GUIA-INSTALACAO.md`](openclaw-openshift/GUIA-INSTALACAO.md).
