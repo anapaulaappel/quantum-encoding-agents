@@ -15,7 +15,7 @@
 
 %% ── Packages ───────────────────────────────────────────────────────────────
 \usepackage{amsmath}
-\usepackage{amssymb}
+% amssymb loaded after acmart to avoid \Bbbk conflict
 \usepackage{braket}          % Dirac notation: \ket{}, \bra{}, \braket{}
 \usepackage{listings}
 \usepackage{xcolor}
@@ -24,6 +24,11 @@
 \usepackage{hyperref}
 \usepackage{microtype}
 \usepackage{cleveref}
+
+%% ── Tolerance for line breaking (needed for \texttt{} in narrow columns) ───
+\tolerance=1500
+\emergencystretch=2em
+\hbadness=1500
 
 %% ── Code listing style ─────────────────────────────────────────────────────
 \lstset{
@@ -101,9 +106,7 @@
 %% ═══════════════════════════════════════════════════════════════════════════
 \begin{document}
 
-\maketitle
-
-%% ── Abstract ───────────────────────────────────────────────────────────────
+%% ACM requires abstract BEFORE \maketitle
 \begin{abstract}
 Selecting an appropriate data encoding strategy is one of the most consequential
 and least-tooled decisions in Quantum Machine Learning (QML) pipelines. The choice
@@ -129,6 +132,8 @@ angle, dense angle, IQP, basis, data re-uploading, and custom feature map---unde
 realistic NISQ hardware constraints, and that KTA scores discriminate between
 encodings on benchmark datasets.
 \end{abstract}
+
+\maketitle
 
 %% ═══════════════════════════════════════════════════════════════════════════
 \section{Introduction}
@@ -370,10 +375,10 @@ stage 1, with KTA providing a measurement of whether the chosen encoding creates
 Hilbert space geometry useful for the loss at stage 4.
 
 For quantum kernel methods (QSVM), stages 2--5 are replaced by classical SVM
-training on the kernel matrix $K[i,j] = |\langle\phi(x_i)|\phi(x_j)\rangle|^2$---
-which is exactly what the \texttt{/v1/kernel} endpoint computes. In this case, the
-encoding is the \emph{entire} model specification, reinforcing the centrality of
-stage 1.
+training on the kernel matrix
+$K[i,j] = |\langle\phi(x_i)|\phi(x_j)\rangle|^2$,
+computed by the \texttt{/v1/kernel} endpoint. In this case the encoding is the
+\emph{entire} model specification, reinforcing the centrality of stage~1.
 
 \subsection{The Encoding Selection Problem}
 
@@ -441,21 +446,22 @@ bridges this gap through specialized agents calibrated to each profile.
 
 \subsection{Architecture Overview}
 
-The system consists of three loosely coupled layers: (1) an OpenClaw agent gateway
-with LLM backend (Qwen2.5-Coder-14B via Ollama or Llama-3.2-3B via vLLM on
-OpenShift), (2) the \texttt{llama-qiskit-agents} FastAPI microservice exposing the
-quantum pipeline, and (3) the NVIDIA OpenShell security layer enforcing per-agent
-sandbox policies. The microservice is stateless and can be called directly via HTTP
-independently of the agent framework.
+The system consists of three loosely coupled layers: (1)~an OpenClaw agent gateway
+with LLM backend (Qwen2.5-Coder-14B via Ollama, or Llama-3.2-3B via vLLM on
+OpenShift), (2)~a FastAPI microservice (\texttt{llama\-qiskit\-agents}) exposing
+the quantum pipeline, and (3)~the NVIDIA OpenShell security layer enforcing
+per-agent sandbox policies. The microservice is stateless and can be called
+directly via HTTP independently of the agent framework.
 
 \subsection{Data Profile Analysis}
 
 The first processing step is structured data profiling. Given input in any of three
 forms---a numpy array, a CSV file, or a natural language description---the system
 extracts a \texttt{DataProfile} dataclass with seven fields:
-\texttt{n\_samples}, \texttt{n\_features}, \texttt{is\_binary},
-\texttt{is\_categorical}, \texttt{is\_continuous}, \texttt{has\_negative}, and
-\texttt{description}. For text descriptions, keyword detection in both Portuguese
+\texttt{n\_sam\-ples}, \texttt{n\_fea\-tures}, \texttt{is\_bi\-na\-ry},
+\texttt{is\_cat\-e\-gor\-i\-cal}, \texttt{is\_con\-tin\-u\-ous},
+\texttt{has\_neg\-a\-tive}, and \texttt{de\-scrip\-tion}.
+For text descriptions, keyword detection in both Portuguese
 and English maps phrases to profile flags.
 
 \subsection{The Seven Encoding Strategies}
@@ -463,24 +469,25 @@ and English maps phrases to profile flags.
 The system implements seven encoding families as Qiskit \texttt{QuantumCircuit}
 objects. Table~\ref{tab:encodings} summarizes their properties.
 
-\begin{table}[h]
+\begin{table*}[t]
 \caption{Quantum encoding strategies implemented in the system.}
 \label{tab:encodings}
-\begin{tabular}{lllp{3.2cm}l}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}llll p{3.8cm} l@{}}
 \toprule
 \textbf{Encoding} & \textbf{Qubits} & \textbf{Depth} &
 \textbf{Recommended for} & \textbf{Key gates} \\
 \midrule
-Amplitude       & $\lceil\log_2 n\rceil$ & $O(2^n)$  & Large vectors, qubit-constrained & \texttt{StatePreparation} \\
-Angle           & $d$                    & $1$        & $d\!\leq\!4$, continuous         & $R_y(x_i)$ \\
-Dense Angle~\cite{sammartino2026} & $\lceil d/2\rceil$ & $2$ & $5\!\leq\!d\!\leq\!12$, contin.\ & $R_y R_z$ per qubit \\
-IQP~\cite{havlicek2019} & $d$            & ${\sim}3d$ & $8\!\leq\!d\!\leq\!16$, kernels  & $H{+}R_z(x_i^2){+}R_{zz}$ \\
-Basis           & $d$                    & ${\leq}d$  & Binary / categorical             & $X$ per 1-bit \\
-Data Re-upl.~\cite{perezsalinas2020} & $d$ & ${\sim}4d$ & VQC, QNN              & $R_y{\times}L + CX$ chain \\
-Custom FM       & $d$                    & ${\sim}3d$ & QSVM, arbitrary kernels          & $H{+}R_z{+}R_y{+}CZ$ \\
+Amplitude       & $\lceil\log_2 n\rceil$ & $O(2^n)$   & Large vectors, qubit-constrained     & \texttt{StatePreparation} \\
+Angle           & $d$                    & $1$         & $d\!\leq\!4$, continuous             & $R_y(x_i)$ per qubit \\
+Dense Angle~\cite{sammartino2026} & $\lceil d/2\rceil$ & $2$ & $5\!\leq\!d\!\leq\!12$, continuous & $R_y(x_{2i})\,R_z(x_{2i+1})$ \\
+IQP~\cite{havlicek2019} & $d$            & ${\sim}3d$  & $8\!\leq\!d\!\leq\!16$, kernels      & $H, R_z(x_i^2), R_{zz}(x_i x_j)$ \\
+Basis           & $d$                    & ${\leq}\,d$ & Binary / categorical                 & $X$ per 1-bit \\
+Data Re-upl.~\cite{perezsalinas2020} & $d$ & ${\sim}4d$ & VQC, QNN, variational              & $R_y \times L + CX$ chain \\
+Custom FM       & $d$                    & ${\sim}3d$  & QSVM, arbitrary kernels              & $H, R_z, R_y, CZ$ pairwise \\
 \bottomrule
-\end{tabular}
-\end{table}
+\end{tabular*}
+\end{table*}
 
 \textbf{Dense-angle encoding}~\cite{sammartino2026} achieves half the qubit count of
 standard angle encoding at depth 2 by packing two features per qubit:
@@ -490,9 +497,8 @@ standard angle encoding at depth 2 by packing two features per qubit:
     R_z(x_{2i+1})\,R_y(x_{2i})\,|0\rangle_i.
 \end{equation}
 
-\textbf{IQP encoding}~\cite{havlicek2019} is implemented without a
-\texttt{qiskit-machine-learning} dependency through manual decomposition of
-$R_{zz}(\theta) = CX \cdot R_z(\theta) \cdot CX$:
+\textbf{IQP encoding}~\cite{havlicek2019} is implemented without external
+dependencies through manual decomposition of $R_{zz}(\theta) = CX{\cdot}R_z(\theta){\cdot}CX$:
 \begin{equation}
   U_{\mathrm{IQP}}(x)
   = H^{\otimes d}
@@ -508,38 +514,36 @@ $d$ and compatible with linear and heavy-hex topologies.
 The recommendation pipeline has two stages: data-driven base selection and
 hardware-constrained refinement.
 
-\textbf{Base selection} applies a priority decision tree over the
-\texttt{DataProfile}: (1) binary, $d \leq 16$ $\rightarrow$ \texttt{basis};
-(2) continuous, $d \leq 4$ $\rightarrow$ \texttt{angle};
-(3) continuous, $4 < d \leq 12$, no negatives $\rightarrow$ \texttt{dense\_angle};
-(4) single sample, $d \geq 4$ $\rightarrow$ \texttt{amplitude};
-(5) continuous, $8 < d \leq 16$ $\rightarrow$ \texttt{iqp};
-(6) continuous, $d > 16$ $\rightarrow$ \texttt{custom\_feature\_map};
-(7) default $\rightarrow$ \texttt{angle}.
+\textbf{Base selection} applies a priority decision tree over the \texttt{DataProfile}:
+(1)~binary, $d \leq 16$ $\to$ \textit{basis};
+(2)~continuous, $d \leq 4$ $\to$ \textit{angle};
+(3)~continuous, $4 < d \leq 12$, no negatives $\to$ \textit{dense\_angle};
+(4)~single sample, $d \geq 4$ $\to$ \textit{amplitude};
+(5)~continuous, $8 < d \leq 16$ $\to$ \textit{iqp};
+(6)~continuous, $d > 16$ $\to$ \textit{custom\_feature\_map};
+(7)~default $\to$ \textit{angle}.
 
 \textbf{Task refinement} overrides based on the QML task: kernel methods and QSVM
-elevate to \texttt{custom\_feature\_map}; variational methods prefer
-\texttt{data\_reuploading}; binary classification with binary data uses
-\texttt{basis}.
+elevate to \textit{custom\_feature\_map}; variational methods prefer
+\textit{data\_reuploading}; binary classification with binary inputs uses \textit{basis}.
 
-\textbf{Hardware refinement} applies the $p^{*}$ threshold from
-Sammartino~\cite{sammartino2026}. For any \texttt{HardwareProfile} with
-\texttt{gate\_error\_rate} $\geq 10^{-3}$, deep encodings
-(\texttt{amplitude}, \texttt{custom\_feature\_map}, \texttt{iqp}) are replaced by
-\texttt{dense\_angle} ($d > 4$) or \texttt{angle} ($d \leq 4$). Additionally,
-\texttt{connectivity: heavy-hex} or \texttt{linear} triggers a SWAP overhead
-warning for \texttt{custom\_feature\_map}, and \texttt{max\_depth\_budget} triggers
+\textbf{Hardware refinement} applies the $p^{*}$ threshold
+from~\cite{sammartino2026}. For any \texttt{HardwareProfile} with
+\texttt{gate\_error\_rate} $\geq 10^{-3}$, deep encodings (amplitude,
+custom\_feature\_map, iqp) are replaced by \textit{dense\_angle} ($d > 4$) or
+\textit{angle} ($d \leq 4$). Heavy-hex or linear connectivity triggers a SWAP
+overhead warning for custom\_feature\_map; \texttt{max\_depth\_budget} triggers
 a depth feasibility warning.
 
 \subsection{Natural Language Explanation Generation}
 
 The explanation layer generates a four-paragraph structured narrative in the
-detected language (Portuguese or English), each paragraph citing concrete values
-from the \texttt{DataProfile} and \texttt{SimulationResult}: (1) data description,
-(2) encoding justification with geometric intuition, (3) circuit metrics with NISQ
-compatibility assessment, and (4) comparative analysis of alternatives with concrete
-depth and qubit differences. Language detection uses vocabulary overlap between the
-input text and Portuguese/English marker sets.
+detected language, each paragraph citing concrete values from the data profile and
+simulation result: (1)~data description, (2)~encoding justification with geometric
+intuition, (3)~circuit metrics with NISQ compatibility assessment, and
+(4)~comparative analysis of alternatives with concrete depth and qubit differences.
+Language detection uses vocabulary overlap between the input text and
+Portuguese/English marker sets.
 
 \subsection{Quantum Kernel Evaluation}
 
@@ -570,34 +574,32 @@ pipeline.
 \subsection{Bloch Sphere Visualization}
 
 For encodings with $n \leq 6$ qubits, the system optionally captures the statevector
-before measurement and renders the Bloch sphere representation of each qubit's
-marginal state using \texttt{plot\_bloch\_multivector}. The resulting PNG
-(base64-encoded) accompanies the recommendation when \texttt{include\_bloch: true}
-is set in the request, providing geometric intuition for what the encoding does to
-each data point.
+before measurement and renders the Bloch sphere of each qubit's marginal state using
+\texttt{plot\_bloch\_\allowbreak multivector}. The resulting PNG (base64-encoded)
+accompanies the recommendation when \texttt{include\_bloch:\,true} is set, providing
+geometric intuition for what the encoding does to each data point.
 
 \subsection{Agent Personalities and the Role of SOUL.md}
 
 Three OpenClaw agents expose the recommendation system through distinct communicative
-registers. \textbf{QiskitAgent} (\texttt{quantum\_encoding}) is the general-purpose
-agent. \textbf{Circuit} (\texttt{qiskit\_expert}) is calibrated for QML
-practitioners: its \texttt{SOUL.md} instructs it to presuppose familiarity with key
-concepts, respond in three dense blocks (encoding name, metrics, rationale), never
-explain superposition, and present trade-offs as two objective sides without
-choosing. \textbf{Quanta} (\texttt{qiskit\_mentor}) is calibrated for learners: its
-\texttt{SOUL.md} prohibits the Schr\"odinger's cat analogy (which lies) and mandates
-physical intuition before mathematics---the Bloch sphere before Dirac notation. Both
-agents perform a calibration ritual on first session (\texttt{BOOTSTRAP.md}) to
-populate \texttt{USER.md} with a persistent user profile.
+registers. \textbf{QiskitAgent} is the general-purpose agent. \textbf{Circuit}
+is calibrated for QML practitioners: its \texttt{SOUL.md} instructs it to
+presuppose familiarity with key concepts, respond in three dense blocks (encoding
+name, metrics, rationale), never explain superposition, and present trade-offs as
+two objective sides without choosing. \textbf{Quanta} is calibrated for learners:
+its \texttt{SOUL.md} prohibits the Schr\"odinger's cat analogy (which lies) and
+mandates physical intuition before mathematics---the Bloch sphere before Dirac
+notation. Both agents perform a calibration ritual on first session
+(\texttt{BOOTSTRAP.md}) to populate \texttt{USER.md} with a persistent profile.
 
 \subsection{Skill Architecture}
 
 Two shared skills encapsulate reusable behavior across all agents.
-\texttt{\$qiskit-api} documents the \texttt{/v1/recommend/explain} endpoint as a
+The \texttt{\$qiskit-api} skill documents the recommendation endpoint as a
 \texttt{SKILL.md} file, eliminating documentation duplication and ensuring
-consistent behavior when the API evolves. \texttt{\$circuit-review} provides a
-four-step protocol for reviewing an existing circuit pasted by the user: identify
-the encoding, extract metrics, call \texttt{/v1/compare} for benchmark, and issue
+consistent behavior when the API evolves. The \texttt{\$circuit-review} skill
+provides a four-step protocol for reviewing an existing circuit: identify
+the encoding, extract metrics, benchmark via \texttt{/v1/compare}, and issue
 one of three verdicts (keep / optimize / replace) with a technical rationale.
 
 \subsection{Security Architecture (OpenShell)}
@@ -614,14 +616,15 @@ keys, enabling per-binary policy enforcement through Landlock LSM.
 \subsection{Kubeflow Pipeline for RHOAI}
 
 The full workflow is codified as a Kubeflow Pipelines v2 DAG deployable on Red Hat
-OpenShift AI~\cite{rhoai2026}: (1) \texttt{analyze\_data} via
-\texttt{POST /v1/analyze}, (2) \texttt{recommend\_encoding} via
-\texttt{POST /v1/recommend/explain}, (3) \texttt{compare\_encodings} via
-\texttt{POST /v1/compare}, (4) \texttt{compute\_kernel} via \texttt{POST /v1/kernel}
-(when labels are provided), and (5) \texttt{log\_to\_mlflow}~\cite{zaharia2018}
-(parameters, metrics, heatmap, Bloch sphere visualization, generated Qiskit code).
-The pipeline accepts hardware profile parameters that propagate to the
-recommendation engine, enabling reproducible NISQ-aware experiments.
+OpenShift AI~\cite{rhoai2026}. Five sequential steps orchestrate the pipeline:
+(1)~data profiling via \texttt{/v1/analyze},
+(2)~encoding recommendation via \texttt{/v1/recommend/explain},
+(3)~seven-encoding comparison via \texttt{/v1/compare},
+(4)~kernel matrix computation via \texttt{/v1/kernel} (when labels are provided),
+and (5)~artifact logging to MLflow~\cite{zaharia2018} (parameters, metrics,
+heatmap, Bloch sphere visualization, and generated Qiskit code).
+Hardware profile parameters propagate through all steps,
+enabling reproducible NISQ-aware experiments.
 
 %% ═══════════════════════════════════════════════════════════════════════════
 \section{Discussion}
@@ -682,13 +685,12 @@ that determines what information to surface, in what order, and with what degree
 assumed prior knowledge. The security architecture extends this idea: agent policy
 is a function of agent role, not just of agent function.
 
-Future work includes: (i) integration with IBM Quantum real hardware via
-\texttt{QiskitRuntimeService} for empirical NISQ validation; (ii) the Q-Tucker
-shallow state preparation~\cite{qtuckerarxiv} as an alternative amplitude encoding
-with $O(n)$ depth; (iii) the Quantum Spectral Model~\cite{qsmarxiv} as an adaptive
-encoding whose frequency spectrum is conditioned on the input; and (iv) a
-KTA-guided encoding search that evaluates multiple candidates and returns the one
-with the highest alignment score.
+Future work includes: (i)~integration with IBM Quantum real hardware for empirical
+NISQ validation; (ii)~the Q-Tucker shallow state preparation~\cite{qtuckerarxiv}
+as an alternative amplitude encoding with $O(n)$ depth; (iii)~the Quantum Spectral
+Model~\cite{qsmarxiv} as an adaptive encoding whose frequency spectrum is
+conditioned on the input; and (iv)~a KTA-guided encoding search that evaluates
+multiple candidates and returns the one with the highest alignment score.
 
 %% ═══════════════════════════════════════════════════════════════════════════
 \bibliographystyle{ACM-Reference-Format}
