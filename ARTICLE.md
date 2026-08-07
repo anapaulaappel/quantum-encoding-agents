@@ -52,17 +52,41 @@ LaRose and Coyle [6] conducted the first systematic comparative study of encodin
 
 The most comprehensive treatment is Sammartino's 2026 survey [1], which reviews 66 papers from 2017 to 2026, classifies encodings into six families, and derives practical selection guidelines. Crucially, Sammartino formalizes the critical gate error threshold: for hardware with gate error rate $p \geq p^* \approx 10^{-3}$, deep encodings (amplitude, IQP, custom feature map) accumulate noise faster than their expressibility advantage compensates, making shallow encodings (angle, dense angle, data re-uploading) preferable. Dense-angle encoding — which packs two features per qubit via $R_y(x_{2i}) \cdot R_z(x_{2i+1})$ — is identified as the most underused encoding family in applied QML despite its favorable depth-qubit tradeoff.
 
-### 2.2 Trainability and Barren Plateaus
+### 2.2 Encoding as an Implicit Kernel
+
+A result fundamental to the theoretical grounding of our system is Schuld's 2021 theorem [S21]: every supervised quantum model that encodes data into a quantum state $|\phi(x)\rangle$ and measures an observable is mathematically equivalent to a kernel support vector machine with kernel:
+
+$$K(x, x') = |\langle\phi(x)|\phi(x')\rangle|^2$$
+
+This equivalence has a decisive practical implication stated explicitly in [S21]: *"the way that data is encoded into quantum states is the main ingredient that can potentially set quantum models apart from classical machine learning models."* Furthermore, kernel-based training — which is what QSVM performs directly — is provably at least as good as variational circuit training for the same encoding. The choice of encoding is therefore not a preprocessing decision; it is the core modeling decision, equivalent to choosing a kernel in classical SVM. Different encodings define different kernels: angle encoding defines a product-of-cosines kernel over the feature space; IQP encoding defines a kernel that includes cross-feature interaction terms $\cos(x_i x_j)$; custom feature map encoding defines an entangled kernel over the full feature Hilbert space. Our system makes this choice explicit and measurable — the Kernel-Target Alignment (KTA) score computed by the `/v1/kernel` endpoint is a direct, label-aware evaluation of the implicit kernel defined by any encoding on the actual data.
+
+### 2.3 Trainability and Barren Plateaus
 
 The trainability of quantum circuits is a central concern for encoding choices used in variational algorithms. McClean et al. [5a] demonstrated that randomly initialized quantum circuits exhibit barren plateaus: exponentially vanishing gradients that make training infeasible beyond moderate qubit counts. This finding constrains the choice of encoding for variational methods — encodings that produce highly entangled states may exacerbate barren plateaus. Cerezo et al. [5b] surveyed the landscape of variational quantum algorithms, including the encoding strategies that couple best with trainable ansatze, establishing data re-uploading as the preferred input encoding for QNNs and VQCs due to its per-layer data injection that maintains gradient flow.
 
-### 2.3 AI Agents for Scientific Tooling
+### 2.4 Expressibility, Entanglement, and the Encoding Tradeoff
+
+The encoding selection problem has a fundamental three-way tension that the article must make explicit. Sim, Johnson and Aspuru-Guzik [Sim19] define *expressibility* as the deviation of a parameterized quantum circuit's output distribution from the Haar measure — circuits that cover Hilbert space densely have high expressibility. Their key result: shallow circuits have low expressibility and are confined to structured submanifolds of the state space, which may be insufficient to separate classes. This is the complementary risk to the barren plateau: too-shallow encodings underfit in Hilbert space, while too-deep circuits become untrainable due to vanishing gradients [5a]. Sammartino [1] adds the third axis: above $p^* \approx 10^{-3}$, the depth budget is set by hardware decoherence, not by expressibility requirements. The encoding recommendation policy in our system navigates all three axes simultaneously — the base heuristic selects the encoding with sufficient expressibility for the data profile, hardware refinement caps depth to the feasible regime, and KTA provides empirical evidence that the chosen encoding actually aligns with the classification task.
+
+Larocca et al. [Lar23] further establish that over-parameterized quantum neural networks undergo a phase transition from a barren plateau regime to a trainable regime as the number of parameters exceeds a critical threshold, directly linking encoding circuit depth to parameter count and trainability. This connects to our recommendation logic: data re-uploading encoding, which inserts the data in each layer rather than once, effectively increases the parameter density per qubit and maintains gradient flow, making it the preferred encoding for variational methods.
+
+### 2.5 Quantum Advantage and Scope of NISQ-Era QML
+
+A fundamental question any QML paper must address is whether quantum advantage is achievable in practice. The honest answer is nuanced. Huang et al. [Hua22] proved exponential quantum advantage in a specific learning task — predicting properties of quantum physical systems from quantum measurements — demonstrated on 40-qubit superconducting hardware. However, this advantage is task-specific: it applies when the data itself is quantum in origin, not when encoding classical tabular data into quantum circuits. Huang, Kueng and Preskill [Hua21] establish complementary information-theoretic bounds showing that classical ML can match quantum ML on average over input distributions, but quantum advantage is possible worst-case.
+
+For classical datasets on NISQ hardware — the regime of our system — quantum advantage over classical methods has not been proven in general. The encoding-based perspective offers a different motivation: quantum feature maps may define kernels over Hilbert space geometries that are classically hard to compute explicitly but easy to evaluate via quantum circuit execution [4, S21]. Whether this advantage materializes for any specific dataset is precisely what KTA measurement enables to assess *before* training — which is the contribution of our `/v1/kernel` endpoint. Bowles, Ahmed and Schuld [Bow24] further show, in a large-scale study across 12 QML models and 160 datasets, that classical baselines frequently match or outperform quantum classifiers at current qubit scales, underscoring that encoding evaluation is not optional but essential. Our system is therefore designed as a NISQ-era engineering tool for informed encoding selection, not as a claim of general quantum supremacy.
+
+### 2.6 NISQ vs. Fault-Tolerant Quantum Computing
+
+The hardware_profile constraints in our system encode NISQ-era realities that will shift significantly in the fault-tolerant regime. On current NISQ devices — characterized by gate error rates of $10^{-3}$ to $10^{-2}$, qubit counts of 10–400, and no error correction — circuit depth is the primary engineering constraint. Deep encodings such as amplitude encoding (depth $O(2^n)$) and multi-layer custom feature maps become impractical above the $p^*$ threshold. In the fault-tolerant era, with logical qubits suppressing error to arbitrarily low levels, this constraint disappears: amplitude encoding's exponential qubit compression becomes viable, and the encoding choice is driven purely by expressibility and task alignment rather than hardware feasibility. Our recommendation engine's NISQ-specific logic is explicitly scoped: the `hardware_profile` field allows users to specify their hardware regime, and the system's behavior changes accordingly — a user passing `gate_error_rate: 0.0` (perfect hardware, simulation) receives recommendations based on expressibility alone, while a user passing `gate_error_rate: 5e-3` (IBM Eagle) receives hardware-adjusted recommendations that deprioritize deep encodings. This design is forward-compatible: as hardware improves, the same system surface richer encodings for the same data.
+
+### 2.7 AI Agents for Scientific Tooling
 
 The use of LLM-based agents as interfaces for scientific computing tools is an emerging paradigm. Function-calling LLMs [Meta AI, 2024; OpenAI, 2023] allow agents to invoke specialized backends — simulators, optimizers, databases — based on natural language intent. This approach has been applied to chemistry [Boiko et al., 2023], materials science, and bioinformatics, but has not been systematically applied to quantum computing. Our system is, to our knowledge, the first to deploy multi-personality LLM agents specifically for quantum encoding recommendation.
 
 The OpenClaw agent framework [OpenClaw, 2026] provides the infrastructure for agent deployment with persistent memory (via `MEMORY.md`), user calibration (via `BOOTSTRAP.md` and `USER.md`), and skill encapsulation. The skills system allows shared behavioral modules (`$qiskit-api`, `$circuit-review`) to be loaded on demand across agents with different communicative styles.
 
-### 2.4 Secure Agent Deployment
+### 2.8 Secure Agent Deployment
 
 The security of autonomous agents operating on computational infrastructure is an open problem. NVIDIA OpenShell [NVIDIA, 2026] addresses this through out-of-process policy enforcement: each agent runs in an isolated sandbox governed by a YAML policy that constrains filesystem access, network endpoints (at HTTP method granularity, enforced by Landlock LSM + seccomp), and process privileges. The policy engine validates rules using the Z3 SMT solver before application, providing formal correctness guarantees unavailable in traditional Kubernetes NetworkPolicy. Our deployment assigns distinct policies to each agent: the expert agent (Circuit) is restricted to the Qiskit API and LLM endpoints only; the mentor agent (Quanta) additionally has read-only access to arXiv and Qiskit documentation, reflecting the pedagogical needs of its communicative role.
 
@@ -70,7 +94,36 @@ The security of autonomous agents operating on computational infrastructure is a
 
 ## 3. Problem Description
 
-### 3.1 The Encoding Selection Problem
+### 3.1 The QML Training Pipeline
+
+To position the encoding selection problem, we first establish the full QML training loop in which it occurs. A supervised quantum machine learning pipeline consists of five stages executed iteratively:
+
+```
+Classical data x ∈ ℝᵈ
+        │
+        ▼
+[1] Data Encoding          U(x)|0⟩ⁿ → |φ(x)⟩        ← THIS PAPER
+        │
+        ▼
+[2] Parameterized Ansatz   V(θ)|φ(x)⟩ → |ψ(x,θ)⟩   ← trainable circuit
+        │
+        ▼
+[3] Measurement            ⟨ψ(x,θ)|M|ψ(x,θ)⟩ → ŷ   ← expectation value
+        │
+        ▼
+[4] Classical Loss          L(ŷ, y) → scalar
+        │
+        ▼
+[5] Classical Optimizer    θ ← θ - η∇L              ← gradient descent
+        │
+        └──────────────────────────────► repeat
+```
+
+The encoding layer [1] is fixed for the duration of training — it is a hyperparameter of the model, not a trainable parameter. This makes the encoding choice more consequential than any single trainable parameter: a poorly chosen encoding defines a kernel that cannot linearly separate the classes in Hilbert space, no matter how many training iterations the optimizer runs. The ansatz [2] amplifies or suppresses the structure introduced by the encoding but cannot recover structure that was not encoded. Stage [3] collapses the quantum state to a classical scalar through measurement; the encoding determines how much of the data's structure survives this collapse. Our system operates at stage [1], with KTA providing a measurement of whether the chosen encoding creates a Hilbert space geometry useful for the loss at stage [4].
+
+For quantum kernel methods (QSVM), stages [2]–[5] are replaced by classical SVM training on the kernel matrix $K[i,j] = |\langle\phi(x_i)|\phi(x_j)\rangle|^2$ — which is exactly what our `/v1/kernel` endpoint computes. In this case, the encoding is the *entire* model specification, reinforcing the centrality of stage [1].
+
+### 3.2 The Encoding Selection Problem
 
 Let $\mathcal{D} = \{x_i\}_{i=1}^N \subset \mathbb{R}^d$ be a classical dataset with $N$ samples and $d$ features. A quantum encoding is a parameterized map $\phi: \mathbb{R}^d \rightarrow \mathcal{H}$ from the feature space to a Hilbert space $\mathcal{H}$ of dimension $2^n$, implemented as a quantum circuit $U(x)$ acting on $n$ qubits such that $|\phi(x)\rangle = U(x)|0\rangle^{\otimes n}$.
 
@@ -78,7 +131,7 @@ The encoding selection problem is: given $\mathcal{D}$ and an optional QML task 
 
 This problem is ill-posed for two reasons. First, the downstream task performance depends on the full learning pipeline, not just the encoding; it cannot be evaluated without training a model. Second, the interaction between data characteristics and encoding properties is non-linear and high-dimensional: the same encoding that works well on dense continuous data may fail on binary or categorical data, and the same circuit that is feasible on a simulator may degrade catastrophically on hardware above the $p^*$ threshold.
 
-### 3.2 Current Practice and Its Limitations
+### 3.3 Current Practice and Its Limitations
 
 In practice, encoding selection is rarely principled. A survey of QML implementations in the literature reveals that the majority use angle encoding as a default, regardless of dataset structure. The primary reasons are familiarity and simplicity: one Ry rotation per feature produces a shallow, interpretable circuit. However, this choice ignores:
 
@@ -90,7 +143,7 @@ In practice, encoding selection is rarely principled. A survey of QML implementa
 
 - **Data type**: basis encoding, the natural choice for binary or categorical data, is systematically ignored when practitioners default to angle encoding for all data types.
 
-### 3.3 The Accessibility Gap
+### 3.4 The Accessibility Gap
 
 Beyond the technical selection problem, there is an accessibility gap: the knowledge required to make principled encoding choices — distributed across a dozen papers published between 2018 and 2026, requiring familiarity with quantum information theory, circuit complexity, and NISQ hardware characteristics — is not accessible to the ML practitioner approaching QML for the first time, nor to the domain expert (chemist, biologist, financial analyst) who wants to apply QML without deep quantum expertise.
 
@@ -345,6 +398,18 @@ The system is available at:
 
 [14] NVIDIA Corporation, "NVIDIA NIM on Red Hat OpenShift AI," 2026. [Online]. Available: https://developer.nvidia.com/nim
 
+[S21] M. Schuld, "Supervised quantum machine learning models are kernel methods," *arXiv preprint*, arXiv:2101.11020, 2021. doi: 10.48550/arXiv.2101.11020
+
+[Sim19] S. Sim, P. D. Johnson, and A. Aspuru-Guzik, "Expressibility and entangling capability of parameterized quantum circuits for hybrid quantum-classical algorithms," *Advanced Quantum Technologies*, vol. 2, no. 12, p. 1900070, 2019. doi: 10.1002/qute.201900070
+
+[Hua22] H.-Y. Huang, R. Kueng, G. Torlai, V. V. Albert, and J. Preskill, "Quantum advantage in learning from experiments," *Science*, vol. 376, no. 6598, pp. 1182–1186, Jun. 2022. doi: 10.1126/science.abn7293
+
+[Hua21] H.-Y. Huang, R. Kueng, and J. Preskill, "Information-theoretic bounds on quantum advantage in machine learning," *Physical Review Letters*, vol. 126, no. 19, p. 190505, May 2021. doi: 10.1103/PhysRevLett.126.190505
+
+[Bow24] J. Bowles, S. Ahmed, and M. Schuld, "Better than classical? The subtle art of benchmarking quantum machine learning models," *arXiv preprint*, arXiv:2403.07059, 2024. doi: 10.48550/arXiv.2403.07059
+
+[Lar23] M. Larocca, F. Sauvage, F. M. Sbahi, G. Verdon, P. J. Coles, and M. Cerezo, "Group-invariant quantum machine learning," *Nature Computational Science*, vol. 3, pp. 542–551, 2023. doi: 10.1038/s43588-023-00467-6
+
 ---
 
 ## Appendix A: BibTeX Entries
@@ -468,5 +533,72 @@ The system is available at:
   number  = {4},
   pages   = {39--45},
   year    = {2018}
+}
+
+@misc{schuld2021_kernel,
+  author        = {Schuld, Maria},
+  title         = {Supervised quantum machine learning models are kernel methods},
+  year          = {2021},
+  eprint        = {2101.11020},
+  archivePrefix = {arXiv},
+  primaryClass  = {quant-ph},
+  doi           = {10.48550/arXiv.2101.11020}
+}
+
+@article{sim2019,
+  author  = {Sim, Sukin and Johnson, Peter D. and Aspuru-Guzik, Al{\'a}n},
+  title   = {Expressibility and Entangling Capability of Parameterized Quantum
+             Circuits for Hybrid Quantum-Classical Algorithms},
+  journal = {Advanced Quantum Technologies},
+  volume  = {2},
+  number  = {12},
+  pages   = {1900070},
+  year    = {2019},
+  doi     = {10.1002/qute.201900070}
+}
+
+@article{huang2022,
+  author  = {Huang, Hsin-Yuan and Kueng, Richard and Torlai, Giacomo and
+             Albert, Victor V. and Preskill, John},
+  title   = {Quantum advantage in learning from experiments},
+  journal = {Science},
+  volume  = {376},
+  number  = {6598},
+  pages   = {1182--1186},
+  year    = {2022},
+  doi     = {10.1126/science.abn7293}
+}
+
+@article{huang2021,
+  author  = {Huang, Hsin-Yuan and Kueng, Richard and Preskill, John},
+  title   = {Information-theoretic bounds on quantum advantage in machine learning},
+  journal = {Physical Review Letters},
+  volume  = {126},
+  number  = {19},
+  pages   = {190505},
+  year    = {2021},
+  doi     = {10.1103/PhysRevLett.126.190505}
+}
+
+@misc{bowles2024,
+  author        = {Bowles, Joseph and Ahmed, Shahnawaz and Schuld, Maria},
+  title         = {Better than classical? The subtle art of benchmarking quantum
+                   machine learning models},
+  year          = {2024},
+  eprint        = {2403.07059},
+  archivePrefix = {arXiv},
+  primaryClass  = {quant-ph},
+  doi           = {10.48550/arXiv.2403.07059}
+}
+
+@article{larocca2023,
+  author  = {Larocca, Martin and Sauvage, Fr{\'e}d{\'e}ric and Sbahi, Faris M.
+             and Verdon, Guillaume and Coles, Patrick J. and Cerezo, Marco},
+  title   = {Group-invariant quantum machine learning},
+  journal = {Nature Computational Science},
+  volume  = {3},
+  pages   = {542--551},
+  year    = {2023},
+  doi     = {10.1038/s43588-023-00467-6}
 }
 ```
