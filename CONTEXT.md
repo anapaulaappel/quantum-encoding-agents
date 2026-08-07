@@ -215,7 +215,7 @@ python scripts/run_quantum_example.py
 - [x] **A1a** — `dense_angle` encoding (Sammartino 2026)
 - [x] **A1b** — `IQP` encoding (Havlíček 2019)
 - [x] **A2** — `hardware_profile` NISQ-aware (p* threshold)
-- [ ] **B1** — Bloch sphere visualization (`matplotlib` + statevector)
+- [x] **B1** — Bloch sphere visualization (`matplotlib` + statevector, commit 7632972)
 - [ ] **B2** — `POST /v1/kernel` (FidelityStatevectorKernel + heatmap)
 - [ ] **C1** — Kubeflow Pipeline para RHOAI
 

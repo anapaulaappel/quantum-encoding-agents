@@ -123,7 +123,8 @@ curl -s -X POST http://localhost:8080/v1/recommend/explain \
   -d '{
     "data": [0.31, 0.72, 0.55, 0.18, 0.9],
     "description": "features contínuas para QSVM",
-    "algorithm": "QSVM"
+    "algorithm": "QSVM",
+    "include_bloch": true
   }' | python3 -m json.tool
 ```
 
@@ -134,6 +135,8 @@ Resposta inclui:
 - `circuit_depth` / `circuit_qubits` — métricas reais do circuito simulado
 - `lang` — idioma detectado (`pt` ou `en`)
 - `hardware_constraints_applied` — `true` se `hardware_profile` influenciou a recomendação
+- `bloch_sphere_b64` — PNG base64 da esfera de Bloch por qubit (quando `include_bloch=true`)
+- `bloch_caption` — legenda explicativa da esfera de Bloch no idioma detectado
 
 ### Outros endpoints
 
