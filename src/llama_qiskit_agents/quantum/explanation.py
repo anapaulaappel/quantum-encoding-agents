@@ -160,6 +160,14 @@ _RECOMMENDATION_REASONS_PT: dict[EncodingType, str] = {
         "(profundidade ≈ 1), fácil de rodar até em hardware NISQ real. É o melhor ponto de partida "
         "para prototipagem e dados de baixa dimensão."
     ),
+    EncodingType.DENSE_ANGLE: (
+        "**Dense angle encoding** é o mais indicado aqui: empacota 2 features por qubit usando "
+        "uma rotação Ry seguida de uma Rz no mesmo qubit. Com seus dados, isso resulta em "
+        "aproximadamente metade dos qubits do angle encoding convencional — e uma profundidade de "
+        "apenas 2 camadas de portas. É o ponto ideal entre eficiência de qubits e simplicidade "
+        "de circuito, identificado no survey Sammartino (arXiv:2606.05387) como a família de "
+        "encoding mais subutilizada em QML aplicado."
+    ),
     EncodingType.BASIS: (
         "**Basis encoding** é o mais indicado aqui porque seus dados já são binários ou categóricos: "
         "cada valor 0/1 mapeia diretamente para um estado da base computacional |0⟩/|1⟩. "
@@ -193,6 +201,14 @@ _RECOMMENDATION_REASONS_EN: dict[EncodingType, str] = {
         "rotation on a dedicated qubit. With few continuous features, the circuit stays very "
         "shallow (depth ≈ 1), making it easy to run even on real NISQ hardware. It's the best "
         "starting point for prototyping and low-dimensional data."
+    ),
+    EncodingType.DENSE_ANGLE: (
+        "**Dense angle encoding** is the best fit here: it packs 2 features per qubit using "
+        "an Ry rotation followed by an Rz on the same qubit. With your data, this results in "
+        "roughly half the qubit count of standard angle encoding — at a circuit depth of just 2. "
+        "It hits the sweet spot between qubit efficiency and circuit simplicity, identified in "
+        "the Sammartino survey (arXiv:2606.05387) as the most underused encoding family in "
+        "applied QML."
     ),
     EncodingType.BASIS: (
         "**Basis encoding** is the best fit here because your data is already binary or "
@@ -371,30 +387,42 @@ def _qubit_comment_en(n_qubits: int, profile: DataProfile) -> str:
 _ALTERNATIVES_PT: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.ANGLE: {
         EncodingType.AMPLITUDE: "Amplitude encoding usaria menos qubits (⌈log₂(n)⌉) mas com circuito muito mais profundo — desvantajoso para poucos features.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding usaria metade dos qubits com profundidade 2 — mas com dados de baixa dimensão o ganho é pequeno e angle é mais simples.",
         EncodingType.BASIS: "Basis encoding só faz sentido para dados binários; com valores contínuos, perderia toda a informação de magnitude.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading seria mais expressivo, mas com profundidade maior e mais portas — desnecessário para dados simples.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map traz entrelaçamento sofisticado, mas é overkill para dados de baixa dimensão sem um kernel definido.",
     },
+    EncodingType.DENSE_ANGLE: {
+        EncodingType.AMPLITUDE: "Amplitude encoding usaria ainda menos qubits (⌈log₂(n)⌉) mas com circuito muito mais profundo — dense angle é mais equilibrado.",
+        EncodingType.ANGLE: "Angle encoding usa 1 qubit por feature — com mais features, dense angle é mais eficiente (⌈n/2⌉ qubits em vez de n).",
+        EncodingType.BASIS: "Basis encoding é só para dados binários — dense angle preserva toda a informação contínua dos dados.",
+        EncodingType.DATA_REUPLOADING: "Data re-uploading adiciona múltiplas camadas e entrelaçamento — mais expressivo, mas mais profundo; dense angle é preferível quando profundidade é o gargalo.",
+        EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map adiciona entrelaçamento full-pairwise — mais expressivo, mas muito mais profundo; dense angle é melhor quando hardware limita profundidade.",
+    },
     EncodingType.AMPLITUDE: {
         EncodingType.ANGLE: "Angle encoding usaria 1 qubit por feature — com muitas features, o custo em qubits seria impraticável.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding usaria ⌈n/2⌉ qubits — ainda mais que amplitude para vetores grandes; amplitude é mais compacto.",
         EncodingType.BASIS: "Basis encoding é só para dados binários; amplitude encoding preserva toda a informação contínua do vetor.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading usa tantos qubits quanto features — amplitude encoding compacta tudo em log₂(n) qubits.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map também usa 1 qubit por feature e adiciona profundidade com entrelaçamento — mais custoso sem ganho claro aqui.",
     },
     EncodingType.BASIS: {
         EncodingType.ANGLE: "Angle encoding aplicaria rotações a valores binários — funcionaria, mas desperdiçaria a natureza discreta dos dados.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding empacotaria bits como ângulos Ry·Rz — perde a semântica natural de bit → estado da base.",
         EncodingType.AMPLITUDE: "Amplitude encoding normalizaria os bits como amplitudes — perde o alinhamento natural entre bits e estados da base.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading adicionaria múltiplas camadas desnecessárias para dados já binários.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map adicionaria rotações e entrelaçamento sem benefício para dados discretos binários.",
     },
     EncodingType.DATA_REUPLOADING: {
         EncodingType.ANGLE: "Angle encoding é mais raso, mas menos expressivo — com uma única camada, limita a capacidade do modelo variacional.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding é mais eficiente em qubits, mas sem o re-upload por camadas perde expressibilidade para modelos variacionais.",
         EncodingType.AMPLITUDE: "Amplitude encoding compacta qubits mas não se integra naturalmente com ansatze variacionais camada a camada.",
         EncodingType.BASIS: "Basis encoding é inadequado para features contínuas em modelos variacionais.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map é ótimo para kernels, mas não é o padrão para camadas variacionais treináveis.",
     },
     EncodingType.CUSTOM_FEATURE_MAP: {
         EncodingType.ANGLE: "Angle encoding é muito simples para definir um kernel implícito: sem entrelaçamento, o espaço de features é pouco expressivo.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding não tem entrelaçamento — sem CZ/ZZ entre qubits, o kernel implícito é muito menos expressivo para QSVM.",
         EncodingType.AMPLITUDE: "Amplitude encoding compacta o dado mas não cria o entrelaçamento necessário para um kernel quântico rico.",
         EncodingType.BASIS: "Basis encoding é para dados binários — kernels quânticos trabalham com dados contínuos em espaço de Hilbert.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading é mais orientado a QNN/VQC; feature maps com CZ/ZZ têm estrutura mais adequada para QSVM.",
@@ -404,30 +432,42 @@ _ALTERNATIVES_PT: dict[EncodingType, dict[EncodingType, str]] = {
 _ALTERNATIVES_EN: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.ANGLE: {
         EncodingType.AMPLITUDE: "Amplitude encoding would use fewer qubits (⌈log₂(n)⌉) but with a much deeper circuit — disadvantageous for few features.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding would use half the qubits at depth 2 — but with low-dimensional data the gain is marginal and angle is simpler.",
         EncodingType.BASIS: "Basis encoding only makes sense for binary data; with continuous values, it would lose all magnitude information.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading would be more expressive but with greater depth and more gates — unnecessary for simple data.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map brings sophisticated entanglement, but is overkill for low-dimensional data without a defined kernel.",
     },
+    EncodingType.DENSE_ANGLE: {
+        EncodingType.AMPLITUDE: "Amplitude encoding would use even fewer qubits (⌈log₂(n)⌉) but with a much deeper circuit — dense angle is more balanced.",
+        EncodingType.ANGLE: "Angle encoding uses 1 qubit per feature — with more features, dense angle is more efficient (⌈n/2⌉ qubits instead of n).",
+        EncodingType.BASIS: "Basis encoding is for binary data only — dense angle preserves all continuous information.",
+        EncodingType.DATA_REUPLOADING: "Data re-uploading adds multi-layer re-insertion and entanglement — more expressive but deeper; dense angle is preferable when depth is the bottleneck.",
+        EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map adds full-pairwise entanglement — more expressive but much deeper; dense angle is better when hardware limits circuit depth.",
+    },
     EncodingType.AMPLITUDE: {
         EncodingType.ANGLE: "Angle encoding would use 1 qubit per feature — with many features, the qubit cost would be impractical.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding would use ⌈n/2⌉ qubits — still more than amplitude for large vectors; amplitude is more compact.",
         EncodingType.BASIS: "Basis encoding is for binary data only; amplitude encoding preserves all continuous vector information.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading uses as many qubits as features — amplitude encoding compresses everything into log₂(n) qubits.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map also uses 1 qubit per feature and adds entanglement depth — more costly with no clear advantage here.",
     },
     EncodingType.BASIS: {
         EncodingType.ANGLE: "Angle encoding would apply rotations to binary values — it would work, but wastes the discrete nature of the data.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding would pack bits as Ry·Rz angles — loses the natural semantics of bit → basis state.",
         EncodingType.AMPLITUDE: "Amplitude encoding would normalize the bits as amplitudes — loses the natural alignment between bits and basis states.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading would add unnecessary multiple layers for already-binary data.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map would add rotations and entanglement with no benefit for discrete binary data.",
     },
     EncodingType.DATA_REUPLOADING: {
         EncodingType.ANGLE: "Angle encoding is shallower but less expressive — with a single layer, it limits variational model capacity.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding is more qubit-efficient but without per-layer re-upload it loses expressibility for variational models.",
         EncodingType.AMPLITUDE: "Amplitude encoding compresses qubits but doesn't naturally integrate with layer-by-layer variational ansatze.",
         EncodingType.BASIS: "Basis encoding is inadequate for continuous features in variational models.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map is great for kernels but not the standard for trainable variational layers.",
     },
     EncodingType.CUSTOM_FEATURE_MAP: {
         EncodingType.ANGLE: "Angle encoding is too simple to define an implicit kernel: without entanglement, the feature space is insufficiently expressive.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding has no entanglement — without CZ/ZZ between qubits, the implicit kernel is far less expressive for QSVM.",
         EncodingType.AMPLITUDE: "Amplitude encoding compresses the data but doesn't create the entanglement needed for a rich quantum kernel.",
         EncodingType.BASIS: "Basis encoding is for binary data — quantum kernels work with continuous data in Hilbert space.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading is more QNN/VQC-oriented; CZ/ZZ feature maps have a structure better suited for QSVM.",
@@ -481,6 +521,7 @@ def generate_qiskit_code(
     generators = {
         EncodingType.AMPLITUDE: _code_amplitude,
         EncodingType.ANGLE: _code_angle,
+        EncodingType.DENSE_ANGLE: _code_dense_angle,
         EncodingType.BASIS: _code_basis,
         EncodingType.DATA_REUPLOADING: _code_data_reuploading,
         EncodingType.CUSTOM_FEATURE_MAP: _code_custom_feature_map,
@@ -734,4 +775,50 @@ for layer in range(n_layers):
             qc.cz(i, j)
 
 # {tradeoff}
+{_draw_block(lang)}{_simulation_block(lang)}"""
+
+
+def _code_dense_angle(
+    data: list[float], profile: DataProfile, n_qubits: int | None, lang: str
+) -> str:
+    import math
+    n = n_qubits or max(1, math.ceil(len(data) / 2))
+    # Garante pares completos: 2*n features
+    n_needed = 2 * n
+    padded = list(data[:n_needed]) + [0.0] * max(0, n_needed - len(data))
+    data_repr = repr(padded)
+
+    if lang == "en":
+        comment = (
+            f"# Dense angle encoding: 2 features per qubit via Ry(x[2i]) · Rz(x[2i+1])\n"
+            f"# {len(data)} features → {n} qubit(s), depth 2"
+        )
+        tradeoff = (
+            f"# Trade-off: {n} qubit(s) (half of standard angle), depth 2.\n"
+            f"# Best for continuous data with 5–12 features where qubit count matters."
+        )
+    else:
+        comment = (
+            f"# Dense angle encoding: 2 features por qubit via Ry(x[2i]) · Rz(x[2i+1])\n"
+            f"# {len(data)} features → {n} qubit(s), profundidade 2"
+        )
+        tradeoff = (
+            f"# Trade-off: {n} qubit(s) (metade do angle convencional), profundidade 2.\n"
+            f"# Ideal para dados contínuos com 5–12 features quando qubits são o gargalo."
+        )
+
+    return f"""{_header(EncodingType.DENSE_ANGLE, lang)}
+import math
+import numpy as np
+from qiskit import QuantumCircuit
+
+data = np.array({data_repr}, dtype=float)
+
+{comment}
+n_qubits = {n}
+qc = QuantumCircuit(n_qubits, name="dense_angle")
+for i in range(n_qubits):
+    qc.ry(data[2 * i],     i)  # primeira feature do par
+    qc.rz(data[2 * i + 1], i)  # segunda feature do par
+
 {_draw_block(lang)}{_simulation_block(lang)}"""

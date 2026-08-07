@@ -13,6 +13,7 @@ class EncodingType(str, Enum):
 
     AMPLITUDE = "amplitude"
     ANGLE = "angle"
+    DENSE_ANGLE = "dense_angle"
     BASIS = "basis"
     DATA_REUPLOADING = "data_reuploading"
     CUSTOM_FEATURE_MAP = "custom_feature_map"
@@ -68,6 +69,33 @@ def angle_encoding(
     qc = QuantumCircuit(n_qubits, name=name)
     for i, val in enumerate(x):
         qc.ry(val, i)
+    return qc
+
+
+def dense_angle_encoding(
+    data: np.ndarray,
+    n_qubits: int | None = None,
+    name: str = "dense_angle",
+) -> QuantumCircuit:
+    """
+    Dense angle encoding: empacota 2 features por qubit usando Ry(x[2i]) · Rz(x[2i+1]).
+    n features → ⌈n/2⌉ qubits; profundidade 2 — mais eficiente que angle quando features > qubits.
+    Identificado como encoding faltante no survey Sammartino (arXiv:2606.05387, 2026).
+    """
+    x = np.asarray(data, dtype=float).flatten()
+    if n_qubits is None:
+        n_qubits = max(1, int(np.ceil(len(x) / 2)))
+    n_qubits = max(n_qubits, 1)
+    # Pad para ter exatamente 2 * n_qubits features (pares completos)
+    n_needed = 2 * n_qubits
+    if len(x) < n_needed:
+        x = np.pad(x, (0, n_needed - len(x)))
+    else:
+        x = x[:n_needed]
+    qc = QuantumCircuit(n_qubits, name=name)
+    for i in range(n_qubits):
+        qc.ry(x[2 * i],     i)  # primeira feature do par → rotação Y
+        qc.rz(x[2 * i + 1], i)  # segunda feature do par → rotação Z
     return qc
 
 
@@ -165,6 +193,8 @@ def build_encoding_circuit(
     data = np.asarray(data)
     if n_qubits is None and encoding_type == EncodingType.AMPLITUDE:
         n_qubits = max(1, int(np.ceil(np.log2(max(1, data.size)))))
+    elif n_qubits is None and encoding_type == EncodingType.DENSE_ANGLE:
+        n_qubits = max(1, int(np.ceil(data.size / 2)))
     elif n_qubits is None:
         n_qubits = max(1, data.size) if data.size else 1
 
@@ -172,6 +202,8 @@ def build_encoding_circuit(
         return amplitude_encoding(data, n_qubits, **kwargs)
     if encoding_type == EncodingType.ANGLE:
         return angle_encoding(data, n_qubits=n_qubits, **kwargs)
+    if encoding_type == EncodingType.DENSE_ANGLE:
+        return dense_angle_encoding(data, n_qubits=n_qubits, **kwargs)
     if encoding_type == EncodingType.BASIS:
         return basis_encoding(data, n_qubits=n_qubits, **kwargs)
     if encoding_type == EncodingType.DATA_REUPLOADING:

@@ -14,6 +14,10 @@ _WHEN: dict[EncodingType, str] = {
     EncodingType.ANGLE: (
         "Bom ponto de partida: poucas portas e fácil de rodar em hardware; 1 qubit por feature contínua."
     ),
+    EncodingType.DENSE_ANGLE: (
+        "Metade dos qubits do angle encoding com profundidade 2 (Ry·Rz por qubit): "
+        "melhor escolha quando features > qubits disponíveis e dados não têm valores negativos."
+    ),
     EncodingType.BASIS: (
         "Ideal para dados já binários/categóricos compactos; pouco uso de superposição no encoding."
     ),

@@ -154,6 +154,13 @@ def _recommend_encoding_from_data(profile: DataProfile) -> tuple[EncodingType, s
             EncodingType.ANGLE,
             "Poucos features contínuos: angle encoding é simples, poucas portas e boa para protótipos.",
         )
+    if 4 < profile.n_features <= 12 and profile.is_continuous and not profile.has_negative:
+        return (
+            EncodingType.DENSE_ANGLE,
+            f"Dense angle encoding empacota 2 features por qubit via Ry·Rz — "
+            f"{profile.n_features} features em ⌈{profile.n_features}/2⌉={int(np.ceil(profile.n_features/2))} qubits "
+            f"com profundidade 2. Mais eficiente que angle sem o custo do re-uploading.",
+        )
     if profile.n_samples <= 1 and profile.n_features >= 4 and profile.is_continuous:
         return (
             EncodingType.AMPLITUDE,
@@ -209,6 +216,11 @@ def get_encoding_tradeoffs() -> dict[EncodingType, str]:
         EncodingType.ANGLE: (
             "Angle: 1 qubit por feature, poucas portas, fácil de implementar. "
             "Limitado em expressibilidade; bom para começar e dados de baixa dimensão."
+        ),
+        EncodingType.DENSE_ANGLE: (
+            "Dense angle: 2 features por qubit (Ry·Rz), profundidade 2. "
+            "Melhor eficiência de qubits que angle sem o custo de profundidade do re-uploading. "
+            "Ideal para dados contínuos com 5–12 features sem valores negativos."
         ),
         EncodingType.BASIS: (
             "Basis: 1 qubit por bit, ideal para dados binários/categóricos. "
