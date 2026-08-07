@@ -38,6 +38,7 @@ from llama_qiskit_agents.quantum.explanation import (
 )
 from llama_qiskit_agents.quantum.hardware_profile import HardwareProfile
 from llama_qiskit_agents.quantum.visualization import render_bloch_sphere, bloch_caption as make_bloch_caption
+from llama_qiskit_agents.quantum.kernel import compute_kernel
 from llama_qiskit_agents.api.schemas import (
     CompareRequest,
     CircuitRequest,
@@ -46,6 +47,8 @@ from llama_qiskit_agents.api.schemas import (
     ExplainResponse,
     HardwareProfileInput,
     HealthResponse,
+    KernelRequest,
+    KernelResponse,
     ProfileResponse,
     RecommendResponse,
     SimulateRequest,
@@ -286,6 +289,61 @@ def tradeoffs() -> str:
 def scenarios_guide() -> str:
     """Guia: qual encoding tende a servir para classificação, kernel, clusterização, etc."""
     return scenario_guide_when_unspecified()
+
+
+@app.post("/v1/kernel", response_model=KernelResponse)
+def kernel(body: KernelRequest) -> KernelResponse:
+    """
+    Calcula a matriz de kernel quântico K[i,j] = |⟨φ(xᵢ)|φ(xⱼ)⟩|² para um dataset.
+
+    - Mínimo 2 amostras; recomendado ≤ 50 (custo O(N²)).
+    - Retorna a matriz N×N, estatísticas (separability_hint, KTA se labels fornecidos)
+      e um heatmap PNG base64 (colormap viridis).
+    - Encoding padrão: custom_feature_map (melhor para kernels quânticos / QSVM).
+    """
+    if len(body.data) < 2:
+        raise HTTPException(status_code=400, detail="Mínimo de 2 amostras para calcular o kernel.")
+    if len(body.data) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Máximo de 100 amostras para simulação local. Recebido: {len(body.data)}.",
+        )
+
+    try:
+        enc = EncodingType(body.encoding_name)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Encoding desconhecido: '{body.encoding_name}'. "
+                   f"Use: {', '.join(e.value for e in EncodingType)}",
+        )
+
+    # Detectar idioma a partir de qualquer texto no body
+    lang = body.lang or "pt"
+
+    try:
+        result = compute_kernel(
+            data=body.data,
+            encoding_type=enc,
+            labels=body.labels,
+            n_qubits=body.n_qubits,
+            lang=lang,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao calcular kernel: {exc}") from exc
+
+    from llama_qiskit_agents.quantum.kernel import kernel_caption
+    cap = kernel_caption(result.n_samples, enc.value, result.stats, lang=lang)
+
+    return KernelResponse(
+        encoding_name=enc.value,
+        n_samples=result.n_samples,
+        n_features=result.n_features,
+        kernel_matrix=result.kernel_matrix.tolist(),
+        stats=result.stats,
+        heatmap_b64=result.heatmap_b64,
+        caption=cap,
+    )
 
 
 @app.post("/v1/circuit", response_class=PlainTextResponse)

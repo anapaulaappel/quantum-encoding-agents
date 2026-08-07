@@ -144,6 +144,54 @@ class ExplainResponse(BaseModel):
     )
 
 
+class KernelRequest(BaseModel):
+    """
+    Entrada para POST /v1/kernel — matriz de kernel quântico.
+
+    Aceita múltiplas amostras (N×F) para calcular K[i,j] = |⟨φ(xᵢ)|φ(xⱼ)⟩|².
+    Recomendado: N ≤ 50 amostras (custo O(N²) em simulação clássica).
+    """
+
+    data: list[list[float]] = Field(
+        ...,
+        description="Dataset: lista de amostras [[f1,f2,...], [f1,f2,...]]. Mínimo 2 amostras.",
+    )
+    encoding_name: str = Field(
+        default="custom_feature_map",
+        description="amplitude | angle | dense_angle | iqp | basis | data_reuploading | custom_feature_map",
+    )
+    labels: list[int] | None = Field(
+        default=None,
+        description="Rótulos de classe por amostra (ex: [0,0,1,1]). "
+                    "Se fornecido, calcula KTA e colore o heatmap por classe.",
+    )
+    n_qubits: int | None = Field(default=None, description="Número de qubits (opcional)")
+    lang: str | None = Field(
+        default=None,
+        description="Idioma da resposta: 'pt' ou 'en'. Se omitido, 'pt'.",
+    )
+
+
+class KernelResponse(BaseModel):
+    """Resposta de POST /v1/kernel."""
+
+    encoding_name: str
+    n_samples: int
+    n_features: int
+    kernel_matrix: list[list[float]] = Field(
+        description="Matriz K N×N de floats [0,1]. K[i][j] = |⟨φ(xᵢ)|φ(xⱼ)⟩|²"
+    )
+    stats: dict[str, float] = Field(
+        description="diagonal_mean, off_diagonal_mean, off_diagonal_std, min, max, "
+                    "separability_hint. kta incluído se labels fornecidos."
+    )
+    heatmap_b64: str | None = Field(
+        default=None,
+        description="PNG base64 do heatmap da matriz de kernel (viridis colormap).",
+    )
+    caption: str = Field(description="Legenda interpretativa do heatmap no idioma detectado.")
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str

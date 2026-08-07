@@ -28,6 +28,7 @@ dependencies = [
     "qiskit-aer>=0.14",
     "python-dotenv>=1.0",
     "matplotlib>=3.7",
+    "qiskit-machine-learning>=0.7",
 ]
 
 [project.optional-dependencies]
