@@ -1,5 +1,7 @@
 """Contexto de problema QML: tarefa, algoritmo e refinamento da recomendação de encoding."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 
@@ -180,11 +182,23 @@ def refine_recommendation(
     data_encoding: EncodingType,
     data_reason: str,
     context: ProblemContext,
+    hardware_profile: "HardwareProfile | None" = None,
 ) -> tuple[EncodingType, str]:
     """
-    Ajusta encoding e justificativa com base na tarefa QML e no algoritmo citado.
-    Ordem: heurísticas por tarefa; em seguida o nome do algoritmo sobrescreve o encoding se houver match explícito.
+    Ajusta encoding e justificativa com base na tarefa QML, algoritmo citado
+    e restrições de hardware (opcional).
+
+    Ordem de prioridade:
+      1. Heurísticas por tarefa QML
+      2. Override pelo nome do algoritmo
+      3. Filtro de hardware (gate_error_rate, max_depth_budget, max_qubits)
+      4. Guia genérico se nenhum contexto foi dado
     """
+    from llama_qiskit_agents.quantum.hardware_profile import (
+        HardwareProfile,
+        NISQ_GATE_ERROR_THRESHOLD,
+    )
+
     enc = data_encoding
     segments: list[str] = [data_reason]
     if context.inferred_note:
@@ -192,11 +206,14 @@ def refine_recommendation(
 
     task = context.task
     if task == MLTask.KERNEL_METHOD and profile.is_continuous:
-        if enc == EncodingType.BASIS:
+        # Encodings sem entrelaçamento são inadequados para kernels — elevar para o melhor disponível
+        _NON_KERNEL_ENCODINGS = {EncodingType.BASIS, EncodingType.ANGLE, EncodingType.DENSE_ANGLE, EncodingType.AMPLITUDE}
+        if enc in _NON_KERNEL_ENCODINGS:
             enc = EncodingType.CUSTOM_FEATURE_MAP
         segments.append(
             "Para kernel / QSVM em dados contínuos, feature maps com entrelaçamento (custom_feature_map) "
-            "ampliam o espaço de features no espaço de Hilbert."
+            "ampliam o espaço de features no espaço de Hilbert. IQP também é adequado para kernels "
+            "com base teórica sólida (Havlíček et al. 2019)."
         )
     elif task == MLTask.VARIATIONAL and profile.is_continuous:
         if enc in (EncodingType.BASIS, EncodingType.AMPLITUDE) and profile.n_features <= 16:
@@ -236,6 +253,64 @@ def refine_recommendation(
                 elif blurb:
                     segments.append(f"Nota sobre {sub}: {blurb}")
                 break
+
+    # ── Filtro de hardware ────────────────────────────────────────────────
+    if hardware_profile is not None:
+        hw = hardware_profile
+
+        # Encodings profundos penalizados acima do limiar p* de gate error
+        _DEEP_ENCODINGS = {EncodingType.AMPLITUDE, EncodingType.CUSTOM_FEATURE_MAP, EncodingType.IQP}
+        _SHALLOW_FALLBACK = EncodingType.DENSE_ANGLE if profile.n_features > 4 else EncodingType.ANGLE
+
+        if hw.is_nisq_constrained() and enc in _DEEP_ENCODINGS:
+            original = enc
+            enc = _SHALLOW_FALLBACK
+            segments.append(
+                f"Ajuste de hardware: gate_error_rate={hw.gate_error_rate:.1e} ≥ p*={NISQ_GATE_ERROR_THRESHOLD:.0e} "
+                f"(Sammartino 2026). {original.value} seria degradado por ruído acumulado — "
+                f"substituído por {enc.value} (circuito mais raso, mais robusto em NISQ)."
+            )
+
+        # Overhead de SWAP em topologias restritas penaliza gates all-to-all
+        if hw.has_swap_overhead() and enc == EncodingType.CUSTOM_FEATURE_MAP:
+            segments.append(
+                f"Atenção: custom_feature_map usa CZ full-pairwise — em topologia '{hw.connectivity}' "
+                f"isso gera overhead de SWAP. Considere IQP (Rzz apenas entre pares adjacentes) "
+                f"ou data_reuploading (CX em cadeia linear) para reduzir profundidade transpilada."
+            )
+
+        # Aviso de budget de profundidade (não muda o encoding — informa apenas)
+        if hw.max_depth_budget is not None:
+            _DEPTH_ESTIMATES = {
+                EncodingType.ANGLE: 1,
+                EncodingType.DENSE_ANGLE: 2,
+                EncodingType.BASIS: 1,
+                EncodingType.DATA_REUPLOADING: 4 * profile.n_features,
+                EncodingType.IQP: 3 + 3 * max(0, profile.n_features - 1),
+                EncodingType.CUSTOM_FEATURE_MAP: 3 * profile.n_features,
+                EncodingType.AMPLITUDE: 4 * profile.n_features,
+            }
+            est = _DEPTH_ESTIMATES.get(enc, 0)
+            if est > hw.max_depth_budget:
+                segments.append(
+                    f"Aviso de profundidade: {enc.value} estimado em ~{est} portas de profundidade — "
+                    f"acima do budget de {hw.max_depth_budget}. O circuito real depende da transpilação "
+                    f"e da topologia do hardware ({hw.connectivity})."
+                )
+
+        # Aviso de qubits insuficientes
+        if hw.max_qubits is not None:
+            import math
+            _QUBIT_ESTIMATES = {
+                EncodingType.AMPLITUDE: max(1, math.ceil(math.log2(max(1, profile.n_features)))),
+                EncodingType.DENSE_ANGLE: max(1, math.ceil(profile.n_features / 2)),
+            }
+            est_qubits = _QUBIT_ESTIMATES.get(enc, profile.n_features)
+            if est_qubits > hw.max_qubits:
+                segments.append(
+                    f"Aviso de qubits: {enc.value} requer ~{est_qubits} qubits para {profile.n_features} features — "
+                    f"acima do limite de {hw.max_qubits} qubits do hardware informado."
+                )
 
     if not context.has_explicit_info():
         segments.append("")

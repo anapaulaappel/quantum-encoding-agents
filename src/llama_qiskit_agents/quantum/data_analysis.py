@@ -195,9 +195,10 @@ def recommend_encoding(
     algorithm: str | None = None,
     problem_description: str | None = None,
     problem_context: ProblemContext | None = None,
+    hardware_profile: "HardwareProfile | None" = None,
 ) -> tuple[EncodingType, str, "ProblemContext"]:
     """
-    Recomenda encoding considerando dados e, opcionalmente, tarefa QML e algoritmo.
+    Recomenda encoding considerando dados, tarefa QML, algoritmo e hardware alvo (opcional).
     Se nenhum contexto for dado, anexa um guia do que usar em cada tipo de problema.
     Retorna (encoding, texto_justificativa, contexto_inferido).
     """
@@ -208,7 +209,7 @@ def recommend_encoding(
 
     ctx = problem_context or infer_problem_context(task, algorithm, problem_description)
     base_enc, base_reason = _recommend_encoding_from_data(profile)
-    enc, reason = refine_recommendation(profile, base_enc, base_reason, ctx)
+    enc, reason = refine_recommendation(profile, base_enc, base_reason, ctx, hardware_profile=hardware_profile)
     return enc, reason, ctx
 
 

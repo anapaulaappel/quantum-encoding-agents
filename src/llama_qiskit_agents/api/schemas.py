@@ -7,6 +7,41 @@ from pydantic import BaseModel, Field
 from llama_qiskit_agents.quantum.data_analysis import DataProfile
 
 
+class HardwareProfileInput(BaseModel):
+    """
+    Restrições de hardware quântico alvo — todos os campos são opcionais.
+
+    Exemplos reais:
+      IBM Eagle:      gate_error_rate=5e-3, connectivity="heavy-hex", max_qubits=127
+      IonQ Aria:      gate_error_rate=3e-3, connectivity="all-to-all", max_qubits=25
+      AerSimulator:   gate_error_rate=0,    connectivity="all-to-all"  (padrão)
+
+    Limiar crítico p* ≈ 1e-3 (Sammartino, arXiv:2606.05387):
+      - gate_error_rate >= 1e-3 → encodings profundos são penalizados na recomendação.
+    """
+
+    gate_error_rate: float | None = Field(
+        default=None,
+        description="Taxa de erro de porta de 2 qubits (ex: 5e-3 para IBM Eagle). Limiar crítico p*=1e-3.",
+    )
+    max_depth_budget: int | None = Field(
+        default=None,
+        description="Profundidade máxima de circuito tolerada. Encodings que a excedem recebem aviso.",
+    )
+    max_qubits: int | None = Field(
+        default=None,
+        description="Número máximo de qubits físicos disponíveis.",
+    )
+    connectivity: str = Field(
+        default="all-to-all",
+        description="Topologia do chip: 'all-to-all' | 'heavy-hex' | 'linear' | 'grid'.",
+    )
+    backend_name: str | None = Field(
+        default=None,
+        description="Nome do backend (informativo, ex: 'ibm_torino', 'ionq_aria').",
+    )
+
+
 class DataInput(BaseModel):
     """Entrada: descrição em texto ou lista numérica (uma amostra ou features)."""
 
@@ -21,6 +56,10 @@ class DataInput(BaseModel):
         default=None,
         description="Texto livre sobre o problema (classificação, kernel, etc.)",
     )
+    hardware_profile: HardwareProfileInput | None = Field(
+        default=None,
+        description="Restrições de hardware alvo (gate_error_rate, max_depth_budget, max_qubits, connectivity).",
+    )
 
 
 class CompareRequest(DataInput):
@@ -31,7 +70,7 @@ class CompareRequest(DataInput):
 class CircuitRequest(BaseModel):
     encoding_name: str = Field(
         ...,
-        description="amplitude | angle | basis | data_reuploading | custom_feature_map",
+        description="amplitude | angle | dense_angle | iqp | basis | data_reuploading | custom_feature_map",
     )
     data: list[float] = Field(default_factory=list)
     n_qubits: int | None = None
@@ -85,6 +124,10 @@ class ExplainResponse(BaseModel):
     task_interpreted: str
     circuit_depth: int | None = Field(default=None, description="Profundidade do circuito simulado")
     circuit_qubits: int | None = Field(default=None, description="Número de qubits do circuito simulado")
+    hardware_constraints_applied: bool = Field(
+        default=False,
+        description="True se hardware_profile foi informado e influenciou a recomendação.",
+    )
 
 
 class HealthResponse(BaseModel):

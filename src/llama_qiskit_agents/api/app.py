@@ -36,12 +36,14 @@ from llama_qiskit_agents.quantum.explanation import (
     build_natural_explanation,
     generate_qiskit_code,
 )
+from llama_qiskit_agents.quantum.hardware_profile import HardwareProfile
 from llama_qiskit_agents.api.schemas import (
     CompareRequest,
     CircuitRequest,
     DataInput,
     ExplainRequest,
     ExplainResponse,
+    HardwareProfileInput,
     HealthResponse,
     ProfileResponse,
     RecommendResponse,
@@ -77,6 +79,19 @@ def _resolve_input(body: DataInput) -> str | list[float]:
     raise HTTPException(status_code=400, detail="Informe description ou data.")
 
 
+def _to_hardware_profile(hw_input: HardwareProfileInput | None) -> HardwareProfile | None:
+    """Converte o schema Pydantic para o dataclass interno."""
+    if hw_input is None:
+        return None
+    return HardwareProfile(
+        gate_error_rate=hw_input.gate_error_rate,
+        max_depth_budget=hw_input.max_depth_budget,
+        max_qubits=hw_input.max_qubits,
+        connectivity=hw_input.connectivity,
+        backend_name=hw_input.backend_name,
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 @app.get("/healthz", response_model=HealthResponse)
 def health() -> HealthResponse:
@@ -104,11 +119,13 @@ def analyze(body: DataInput) -> ProfileResponse:
 def recommend(body: DataInput) -> RecommendResponse:
     raw = _resolve_input(body)
     profile = infer_data_profile(raw)
+    hw = _to_hardware_profile(body.hardware_profile)
     enc, reason, ctx = recommend_encoding(
         profile,
         task=body.task,
         algorithm=body.algorithm,
         problem_description=body.problem_description,
+        hardware_profile=hw,
     )
     return RecommendResponse(
         profile=profile_to_response(profile),
@@ -141,13 +158,15 @@ def recommend_explain(body: ExplainRequest) -> ExplainResponse:
     ]))
     lang = body.lang or detect_language(all_text)
 
-    # Perfil + recomendação
+    # Perfil + recomendação (com hardware_profile opcional)
+    hw = _to_hardware_profile(body.hardware_profile)
     profile = infer_data_profile(raw)
     enc, reason, ctx = recommend_encoding(
         profile,
         task=body.task,
         algorithm=body.algorithm,
         problem_description=body.problem_description,
+        hardware_profile=hw,
     )
 
     # Simular o circuito recomendado para obter métricas reais (depth, qubits)
@@ -189,6 +208,7 @@ def recommend_explain(body: ExplainRequest) -> ExplainResponse:
         task_interpreted=ctx.task.value,
         circuit_depth=sim_result.depth if sim_result else None,
         circuit_qubits=sim_result.num_qubits if sim_result else None,
+        hardware_constraints_applied=hw is not None,
     )
 
 
