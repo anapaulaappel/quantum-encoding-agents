@@ -147,10 +147,28 @@ Resposta inclui:
 | `POST` | `/v1/recommend` | Recomendação estruturada (JSON) |
 | `POST` | `/v1/compare` | Ranking comparativo dos 7 encodings |
 | `POST` | `/v1/compare/csv` | Upload CSV multipart |
+| `POST` | `/v1/kernel` | **Matriz de kernel quântico** K[i,j]=\|⟨φ(xᵢ)\|φ(xⱼ)⟩\|² + heatmap |
 | `POST` | `/v1/circuit` | Diagrama ASCII do circuito |
 | `POST` | `/v1/simulate` | Simula e retorna histograma de medições |
 | `GET` | `/v1/tradeoffs` | Trade-offs de todos os encodings |
 | `GET` | `/docs` | Swagger interativo |
+
+### Exemplo: matriz de kernel com labels de classe
+
+```bash
+curl -s -X POST http://localhost:8080/v1/kernel \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": [[0.1,0.2],[0.15,0.25],[2.5,2.8],[2.6,2.9]],
+    "encoding_name": "angle",
+    "labels": [0, 0, 1, 1],
+    "lang": "pt"
+  }' | python3 -m json.tool
+```
+
+Resposta inclui `kernel_matrix` (N×N), `stats` (com KTA), `heatmap_b64` (PNG base64)
+e `caption` — tudo que precisa para avaliar se o encoding separa as classes antes de
+treinar qualquer classificador quântico.
 
 ---
 
