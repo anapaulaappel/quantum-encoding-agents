@@ -62,15 +62,25 @@ llama-qiskit-agents/
 
 ---
 
-## Os 5 Encodings
+## Os 7 Encodings
 
 | Tipo | Qubits | Profundidade | Melhor para | Gates principais |
 |------|--------|-------------|-------------|-----------------|
 | `amplitude` | `ceil(log2(n))` | Profundo | Vetor grande normalizado; poucos qubits | `StatePreparation` |
-| `angle` | n_features | Raso | Dados contínuos baixa dimensão; prototipagem | `Ry(x[i])` por qubit |
+| `angle` | n_features | 1 | Dados contínuos ≤4 features; prototipagem | `Ry(x[i])` por qubit |
+| `dense_angle` | `ceil(n/2)` | 2 | 5–12 features; metade dos qubits do angle | `Ry(x[2i])·Rz(x[2i+1])` |
+| `iqp` | n_features | ~3n | 8–16 features; kernel quântico | `H + Rz(x²) + Rzz(xᵢ·xⱼ)` |
 | `basis` | n_bits | Mínima | Dados binários/categóricos | `X` por bit=1 |
 | `data_reuploading` | n_features | Médio | VQC, QNN, alta expressividade | `Ry × n_layers` + `CX` chain |
-| `custom_feature_map` | n_features | Profundo | Kernels quânticos (QSVM) | `H + Rz + Ry` + `CZ` pareado |
+| `custom_feature_map` | n_features | Profundo | Kernels quânticos (QSVM) arbitrários | `H + Rz + Ry` + `CZ` pareado |
+
+### Hardware-aware: `HardwareProfile`
+
+Novo módulo `hardware_profile.py`. Limiar crítico `p* ≈ 1e-3` (Sammartino arXiv:2606.05387):
+- `gate_error_rate >= p*` → encodings profundos (amplitude, custom_feature_map, IQP) são substituídos
+- `connectivity: "heavy-hex" | "linear"` → aviso de overhead de SWAP para custom_feature_map
+- `max_depth_budget` → aviso quando depth estimado excede o budget
+- `max_qubits` → aviso de qubits insuficientes
 
 ---
 
@@ -188,13 +198,25 @@ python scripts/run_quantum_example.py
 
 ---
 
-## Tarefa Pendente (contexto da sessão anterior)
+## Estruturas de Dados Chave (atualizado)
 
-**Geração de frases em linguagem natural explicando o ranking de encodings.**
+| Struct | Arquivo | Tipo | Campos principais |
+|--------|---------|------|-------------------|
+| `EncodingType` | `encodings.py:11` | `str+Enum` | `amplitude`, `angle`, `dense_angle`, `iqp`, `basis`, `data_reuploading`, `custom_feature_map` |
+| `DataProfile` | `data_analysis.py:61` | `@dataclass` | `n_samples`, `n_features`, `is_binary`, `is_categorical`, `is_continuous`, `has_negative`, `description` |
+| `HardwareProfile` | `hardware_profile.py` | `@dataclass` | `gate_error_rate`, `max_depth_budget`, `max_qubits`, `connectivity`, `backend_name` |
+| `MLTask` | `problem_context.py:10` | `str+Enum` | `classification`, `clustering`, `encoding_only`, `kernel_method`, `variational`, `unknown` |
+| `ProblemContext` | `problem_context.py:21` | `@dataclass` | `task`, `algorithm`, `raw_hints`, `inferred_note`, `has_explicit_info()` |
+| `SimulationResult` | `simulate.py:28` | `@dataclass` | `encoding_type`, `circuit`, `depth`, `num_qubits`, `counts: dict[str,int]`, `shots` |
+| `HardwareProfileInput` | `api/schemas.py` | Pydantic | espelho do dataclass para API HTTP |
 
-O objetivo era: dado que o controller ranqueou um encoding acima dos outros, gerar frases dinâmicas que citem explicitamente:
-- Características estruturais do dado (`DataProfile`: n_features, is_binary, is_continuous, etc.)
-- Restrições de hardware (`SimulationResult`: depth, num_qubits)
-- Por que essas características favorecem o encoding escolhido sobre as alternativas
+## Estado atual do roadmap
 
-Ponto de entrada mais relevante: `encoding_ranking.py` — especialmente `_alternativa_rationale()` (linha 37) e `format_encoding_ranking_section()` (linha 66). A lógica de recomendação final está em `problem_context.py:refine_recommendation()` (linha 178).
+- [x] **A1a** — `dense_angle` encoding (Sammartino 2026)
+- [x] **A1b** — `IQP` encoding (Havlíček 2019)
+- [x] **A2** — `hardware_profile` NISQ-aware (p* threshold)
+- [ ] **B1** — Bloch sphere visualization (`matplotlib` + statevector)
+- [ ] **B2** — `POST /v1/kernel` (FidelityStatevectorKernel + heatmap)
+- [ ] **C1** — Kubeflow Pipeline para RHOAI
+
+Referências chave: arXiv:2606.05387 (Sammartino survey), Nature 2019 (Havlíček kernel).

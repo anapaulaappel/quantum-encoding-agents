@@ -10,26 +10,49 @@ e entregam código Qiskit completo e copiável.
 ## O que faz
 
 Dado um dataset (numérico, CSV ou descrição em linguagem natural) e contexto QML
-opcional (tarefa, algoritmo, problema), o sistema:
+opcional (tarefa, algoritmo, problema, hardware alvo), o sistema:
 
 1. Analisa o perfil estrutural do dado (dimensão, tipo, distribuição)
-2. Recomenda o melhor entre 5 encodings quânticos
-3. Justifica a escolha citando métricas concretas: qubits, profundidade de circuito
-4. Gera código Python/Qiskit completo e copiável
-5. Simula via `AerSimulator` (CPU, sem hardware real)
-6. Responde no idioma do input (PT-BR ou EN)
+2. Recomenda o melhor entre **7 encodings quânticos**
+3. Ajusta a recomendação para o hardware alvo (gate error rate, max depth, conectividade)
+4. Justifica a escolha citando métricas concretas: qubits, profundidade de circuito
+5. Gera código Python/Qiskit completo e copiável
+6. Simula via `AerSimulator` (CPU, sem hardware real)
+7. Responde no idioma do input (PT-BR ou EN)
 
 ---
 
-## Os 5 encodings suportados
+## Os 7 encodings suportados
 
 | Encoding | Qubits | Profundidade | Ideal para |
 |---|---|---|---|
 | `amplitude` | ⌈log₂(n)⌉ | profunda | vetor grande, mínimo de qubits |
-| `angle` | n_features | rasa | dados contínuos, baixa dimensão |
+| `angle` | n_features | 1 | dados contínuos, ≤4 features, protótipo |
+| `dense_angle` | ⌈n/2⌉ | 2 | 5–12 features, Ry·Rz por qubit (survey Sammartino 2026) |
+| `iqp` | n_features | ~3n | 8–16 features, kernel quântico (Havlíček 2019) |
 | `basis` | n_bits | mínima | dados binários ou categóricos |
 | `data_reuploading` | n_features | média | VQC, QNN, alta expressividade |
-| `custom_feature_map` | n_features | profunda | kernel quântico (QSVM) |
+| `custom_feature_map` | n_features | profunda | QSVM, kernel quântico arbitrário |
+
+### Hardware-aware: limiar p* ≈ 10⁻³
+
+Passe `hardware_profile` no request para recomendação NISQ-realista:
+
+```json
+{
+  "data": [0.31, 0.72, 0.55, 0.18, 0.9],
+  "task": "kernel",
+  "hardware_profile": {
+    "gate_error_rate": 5e-3,
+    "connectivity": "heavy-hex",
+    "max_depth_budget": 20,
+    "backend_name": "ibm_eagle"
+  }
+}
+```
+
+Acima de `gate_error_rate = 1e-3` (limiar p* de Sammartino arXiv:2606.05387),
+encodings profundos são automaticamente substituídos por alternativas mais rasas.
 
 ---
 
@@ -110,6 +133,7 @@ Resposta inclui:
 - `qiskit_code` — código Python completo e copiável
 - `circuit_depth` / `circuit_qubits` — métricas reais do circuito simulado
 - `lang` — idioma detectado (`pt` ou `en`)
+- `hardware_constraints_applied` — `true` se `hardware_profile` influenciou a recomendação
 
 ### Outros endpoints
 
@@ -118,7 +142,7 @@ Resposta inclui:
 | `GET` | `/healthz` | Health check |
 | `POST` | `/v1/recommend/explain` | **Principal** — recomendação + explicação + código |
 | `POST` | `/v1/recommend` | Recomendação estruturada (JSON) |
-| `POST` | `/v1/compare` | Ranking comparativo dos 5 encodings |
+| `POST` | `/v1/compare` | Ranking comparativo dos 7 encodings |
 | `POST` | `/v1/compare/csv` | Upload CSV multipart |
 | `POST` | `/v1/circuit` | Diagrama ASCII do circuito |
 | `POST` | `/v1/simulate` | Simula e retorna histograma de medições |
