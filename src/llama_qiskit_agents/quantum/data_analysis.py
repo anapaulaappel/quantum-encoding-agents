@@ -171,6 +171,12 @@ def _recommend_encoding_from_data(profile: DataProfile) -> tuple[EncodingType, s
             EncodingType.DATA_REUPLOADING,
             "Dados contínuos com dimensão moderada: data re-uploading aumenta expressibilidade sem mais qubits.",
         )
+    if profile.is_continuous and 8 < profile.n_features <= 16:
+        return (
+            EncodingType.IQP,
+            f"IQP encoding com {profile.n_features} features: H + Rz(x²) + Rzz(x·x') diagonais — "
+            "base teórica forte para kernels quânticos em dimensão moderada (Havlíček et al., 2019).",
+        )
     if profile.is_continuous:
         return (
             EncodingType.CUSTOM_FEATURE_MAP,
@@ -221,6 +227,12 @@ def get_encoding_tradeoffs() -> dict[EncodingType, str]:
             "Dense angle: 2 features por qubit (Ry·Rz), profundidade 2. "
             "Melhor eficiência de qubits que angle sem o custo de profundidade do re-uploading. "
             "Ideal para dados contínuos com 5–12 features sem valores negativos."
+        ),
+        EncodingType.IQP: (
+            "IQP: H + Rz(xᵢ²) diagonal + Rzz(xᵢ·xⱼ) entre pares. "
+            "Separável em teoria de complexidade dos encodings de ângulo — "
+            "base teórica forte para kernels quânticos em dimensão moderada. "
+            "Mais profundo que dense_angle, mas mais expressivo sem entrelaçamento arbitrário."
         ),
         EncodingType.BASIS: (
             "Basis: 1 qubit por bit, ideal para dados binários/categóricos. "

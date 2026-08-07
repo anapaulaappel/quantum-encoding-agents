@@ -14,6 +14,7 @@ class EncodingType(str, Enum):
     AMPLITUDE = "amplitude"
     ANGLE = "angle"
     DENSE_ANGLE = "dense_angle"
+    IQP = "iqp"
     BASIS = "basis"
     DATA_REUPLOADING = "data_reuploading"
     CUSTOM_FEATURE_MAP = "custom_feature_map"
@@ -96,6 +97,48 @@ def dense_angle_encoding(
     for i in range(n_qubits):
         qc.ry(x[2 * i],     i)  # primeira feature do par → rotação Y
         qc.rz(x[2 * i + 1], i)  # segunda feature do par → rotação Z
+    return qc
+
+
+def iqp_encoding(
+    data: np.ndarray,
+    n_qubits: int | None = None,
+    n_layers: int = 1,
+    name: str = "iqp",
+) -> QuantumCircuit:
+    """
+    IQP (Instantaneous Quantum Polynomial) encoding: camadas de H + Rz diagonal
+    com termos lineares x[i]^2 e cruzados x[i]*x[j] entre pares de qubits.
+    Base teórica forte para kernels quânticos — separável em teoria de complexidade
+    do angle encoding e do custom_feature_map. (Havlíček et al., Nature 2019)
+    """
+    x = np.asarray(data, dtype=float).flatten()
+    if n_qubits is None:
+        n_qubits = max(1, len(x))
+    n_qubits = max(n_qubits, 1)
+    if len(x) < n_qubits:
+        x = np.pad(x, (0, n_qubits - len(x)))
+    else:
+        x = x[:n_qubits]
+
+    qc = QuantumCircuit(n_qubits, name=name)
+    for _ in range(n_layers):
+        # Camada H: coloca todos em superposição
+        for i in range(n_qubits):
+            qc.h(i)
+        # Termos lineares: Rz(x[i]^2) — diagonal, sem dois-qubit gates
+        for i in range(n_qubits):
+            qc.rz(x[i] ** 2, i)
+        # Termos cruzados: Rzz(x[i]*x[j]) entre pares adjacentes
+        # Implementado como CX + Rz + CX (decomposição de Rzz)
+        for i in range(n_qubits - 1):
+            angle = x[i] * x[i + 1]
+            qc.cx(i, i + 1)
+            qc.rz(angle, i + 1)
+            qc.cx(i, i + 1)
+        # Segunda camada H: completa o bloco IQP
+        for i in range(n_qubits):
+            qc.h(i)
     return qc
 
 
@@ -195,6 +238,8 @@ def build_encoding_circuit(
         n_qubits = max(1, int(np.ceil(np.log2(max(1, data.size)))))
     elif n_qubits is None and encoding_type == EncodingType.DENSE_ANGLE:
         n_qubits = max(1, int(np.ceil(data.size / 2)))
+    elif n_qubits is None and encoding_type == EncodingType.IQP:
+        n_qubits = max(1, data.size) if data.size else 1
     elif n_qubits is None:
         n_qubits = max(1, data.size) if data.size else 1
 
@@ -204,6 +249,8 @@ def build_encoding_circuit(
         return angle_encoding(data, n_qubits=n_qubits, **kwargs)
     if encoding_type == EncodingType.DENSE_ANGLE:
         return dense_angle_encoding(data, n_qubits=n_qubits, **kwargs)
+    if encoding_type == EncodingType.IQP:
+        return iqp_encoding(data, n_qubits=n_qubits, **kwargs)
     if encoding_type == EncodingType.BASIS:
         return basis_encoding(data, n_qubits=n_qubits, **kwargs)
     if encoding_type == EncodingType.DATA_REUPLOADING:

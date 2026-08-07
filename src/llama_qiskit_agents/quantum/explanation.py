@@ -168,6 +168,15 @@ _RECOMMENDATION_REASONS_PT: dict[EncodingType, str] = {
         "de circuito, identificado no survey Sammartino (arXiv:2606.05387) como a família de "
         "encoding mais subutilizada em QML aplicado."
     ),
+    EncodingType.IQP: (
+        "**IQP encoding** (Instantaneous Quantum Polynomial) é o mais indicado aqui: aplica uma "
+        "camada de Hadamards para criar superposição, rotações Rz(xᵢ²) diagonais para codificar "
+        "termos quadráticos, e interações Rzz(xᵢ·xⱼ) entre pares de features para capturar "
+        "correlações cruzadas. Esse padrão H + diagonal + H é computacionalmente distinto dos "
+        "encodings baseados em ângulo puro — a base teórica para kernels quânticos com garantias "
+        "de separabilidade (Havlíček et al., Nature 2019). Mais profundo que dense_angle, "
+        "mas captura estrutura entre features que encodings lineares não conseguem."
+    ),
     EncodingType.BASIS: (
         "**Basis encoding** é o mais indicado aqui porque seus dados já são binários ou categóricos: "
         "cada valor 0/1 mapeia diretamente para um estado da base computacional |0⟩/|1⟩. "
@@ -209,6 +218,15 @@ _RECOMMENDATION_REASONS_EN: dict[EncodingType, str] = {
         "It hits the sweet spot between qubit efficiency and circuit simplicity, identified in "
         "the Sammartino survey (arXiv:2606.05387) as the most underused encoding family in "
         "applied QML."
+    ),
+    EncodingType.IQP: (
+        "**IQP encoding** (Instantaneous Quantum Polynomial) is the best fit here: it applies "
+        "a Hadamard layer for superposition, diagonal Rz(xᵢ²) rotations for quadratic feature "
+        "encoding, and Rzz(xᵢ·xⱼ) interactions between feature pairs to capture cross-correlations. "
+        "This H + diagonal + H pattern is computationally distinct from pure angle-based encodings — "
+        "the theoretical foundation for quantum kernels with separability guarantees "
+        "(Havlíček et al., Nature 2019). Deeper than dense_angle, but captures inter-feature "
+        "structure that linear encodings cannot."
     ),
     EncodingType.BASIS: (
         "**Basis encoding** is the best fit here because your data is already binary or "
@@ -388,6 +406,7 @@ _ALTERNATIVES_PT: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.ANGLE: {
         EncodingType.AMPLITUDE: "Amplitude encoding usaria menos qubits (⌈log₂(n)⌉) mas com circuito muito mais profundo — desvantajoso para poucos features.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding usaria metade dos qubits com profundidade 2 — mas com dados de baixa dimensão o ganho é pequeno e angle é mais simples.",
+        EncodingType.IQP: "IQP encoding capturaria correlações cruzadas entre features, mas é mais profundo e complexo — desnecessário para dados de baixa dimensão.",
         EncodingType.BASIS: "Basis encoding só faz sentido para dados binários; com valores contínuos, perderia toda a informação de magnitude.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading seria mais expressivo, mas com profundidade maior e mais portas — desnecessário para dados simples.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map traz entrelaçamento sofisticado, mas é overkill para dados de baixa dimensão sem um kernel definido.",
@@ -395,13 +414,23 @@ _ALTERNATIVES_PT: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.DENSE_ANGLE: {
         EncodingType.AMPLITUDE: "Amplitude encoding usaria ainda menos qubits (⌈log₂(n)⌉) mas com circuito muito mais profundo — dense angle é mais equilibrado.",
         EncodingType.ANGLE: "Angle encoding usa 1 qubit por feature — com mais features, dense angle é mais eficiente (⌈n/2⌉ qubits em vez de n).",
+        EncodingType.IQP: "IQP encoding captura correlações cruzadas (xᵢ·xⱼ), mas tem mais profundidade — dense angle é preferível quando profundidade é o gargalo.",
         EncodingType.BASIS: "Basis encoding é só para dados binários — dense angle preserva toda a informação contínua dos dados.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading adiciona múltiplas camadas e entrelaçamento — mais expressivo, mas mais profundo; dense angle é preferível quando profundidade é o gargalo.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map adiciona entrelaçamento full-pairwise — mais expressivo, mas muito mais profundo; dense angle é melhor quando hardware limita profundidade.",
     },
+    EncodingType.IQP: {
+        EncodingType.AMPLITUDE: "Amplitude encoding compacta qubits mas perde os termos de interação entre features que tornam IQP expressivo para kernels.",
+        EncodingType.ANGLE: "Angle encoding é mais raso, mas não captura correlações cruzadas xᵢ·xⱼ — IQP tem base teórica mais forte para kernels.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding é mais eficiente em profundidade, mas sem os termos Rzz(xᵢ·xⱼ), perde a estrutura de kernel quântico do IQP.",
+        EncodingType.BASIS: "Basis encoding é para dados binários — IQP trabalha com dados contínuos e captura interações entre features.",
+        EncodingType.DATA_REUPLOADING: "Data re-uploading é mais adequado para treinar um ansatz variacional; IQP é mais adequado para definir um kernel quântico fixo.",
+        EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map tem entrelaçamento CZ/ZZ arbitrário — mais flexível, mas IQP tem uma estrutura teórica mais bem estudada para kernels.",
+    },
     EncodingType.AMPLITUDE: {
         EncodingType.ANGLE: "Angle encoding usaria 1 qubit por feature — com muitas features, o custo em qubits seria impraticável.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding usaria ⌈n/2⌉ qubits — ainda mais que amplitude para vetores grandes; amplitude é mais compacto.",
+        EncodingType.IQP: "IQP encoding usa 1 qubit por feature e adiciona profundidade com termos diagonais — amplitude é mais compacto quando qubits são o gargalo.",
         EncodingType.BASIS: "Basis encoding é só para dados binários; amplitude encoding preserva toda a informação contínua do vetor.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading usa tantos qubits quanto features — amplitude encoding compacta tudo em log₂(n) qubits.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map também usa 1 qubit por feature e adiciona profundidade com entrelaçamento — mais custoso sem ganho claro aqui.",
@@ -409,6 +438,7 @@ _ALTERNATIVES_PT: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.BASIS: {
         EncodingType.ANGLE: "Angle encoding aplicaria rotações a valores binários — funcionaria, mas desperdiçaria a natureza discreta dos dados.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding empacotaria bits como ângulos Ry·Rz — perde a semântica natural de bit → estado da base.",
+        EncodingType.IQP: "IQP encoding aplicaria termos quadráticos e cruzados a dados binários — perda de semântica e custo desnecessário.",
         EncodingType.AMPLITUDE: "Amplitude encoding normalizaria os bits como amplitudes — perde o alinhamento natural entre bits e estados da base.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading adicionaria múltiplas camadas desnecessárias para dados já binários.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map adicionaria rotações e entrelaçamento sem benefício para dados discretos binários.",
@@ -416,6 +446,7 @@ _ALTERNATIVES_PT: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.DATA_REUPLOADING: {
         EncodingType.ANGLE: "Angle encoding é mais raso, mas menos expressivo — com uma única camada, limita a capacidade do modelo variacional.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding é mais eficiente em qubits, mas sem o re-upload por camadas perde expressibilidade para modelos variacionais.",
+        EncodingType.IQP: "IQP encoding define um kernel fixo — data re-uploading é mais adequado para treinar um ansatz variacional parametrizado.",
         EncodingType.AMPLITUDE: "Amplitude encoding compacta qubits mas não se integra naturalmente com ansatze variacionais camada a camada.",
         EncodingType.BASIS: "Basis encoding é inadequado para features contínuas em modelos variacionais.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map é ótimo para kernels, mas não é o padrão para camadas variacionais treináveis.",
@@ -423,6 +454,7 @@ _ALTERNATIVES_PT: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.CUSTOM_FEATURE_MAP: {
         EncodingType.ANGLE: "Angle encoding é muito simples para definir um kernel implícito: sem entrelaçamento, o espaço de features é pouco expressivo.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding não tem entrelaçamento — sem CZ/ZZ entre qubits, o kernel implícito é muito menos expressivo para QSVM.",
+        EncodingType.IQP: "IQP encoding usa Rzz diagonal (termos xᵢ·xⱼ adjacentes) — custom feature map adiciona CZ full-pairwise, criando kernel mais rico.",
         EncodingType.AMPLITUDE: "Amplitude encoding compacta o dado mas não cria o entrelaçamento necessário para um kernel quântico rico.",
         EncodingType.BASIS: "Basis encoding é para dados binários — kernels quânticos trabalham com dados contínuos em espaço de Hilbert.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading é mais orientado a QNN/VQC; feature maps com CZ/ZZ têm estrutura mais adequada para QSVM.",
@@ -433,6 +465,7 @@ _ALTERNATIVES_EN: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.ANGLE: {
         EncodingType.AMPLITUDE: "Amplitude encoding would use fewer qubits (⌈log₂(n)⌉) but with a much deeper circuit — disadvantageous for few features.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding would use half the qubits at depth 2 — but with low-dimensional data the gain is marginal and angle is simpler.",
+        EncodingType.IQP: "IQP encoding would capture cross-feature correlations but at greater depth — unnecessary for low-dimensional data.",
         EncodingType.BASIS: "Basis encoding only makes sense for binary data; with continuous values, it would lose all magnitude information.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading would be more expressive but with greater depth and more gates — unnecessary for simple data.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map brings sophisticated entanglement, but is overkill for low-dimensional data without a defined kernel.",
@@ -440,13 +473,23 @@ _ALTERNATIVES_EN: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.DENSE_ANGLE: {
         EncodingType.AMPLITUDE: "Amplitude encoding would use even fewer qubits (⌈log₂(n)⌉) but with a much deeper circuit — dense angle is more balanced.",
         EncodingType.ANGLE: "Angle encoding uses 1 qubit per feature — with more features, dense angle is more efficient (⌈n/2⌉ qubits instead of n).",
+        EncodingType.IQP: "IQP encoding captures cross-feature correlations (xᵢ·xⱼ) but is deeper — dense angle is preferable when depth is the bottleneck.",
         EncodingType.BASIS: "Basis encoding is for binary data only — dense angle preserves all continuous information.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading adds multi-layer re-insertion and entanglement — more expressive but deeper; dense angle is preferable when depth is the bottleneck.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map adds full-pairwise entanglement — more expressive but much deeper; dense angle is better when hardware limits circuit depth.",
     },
+    EncodingType.IQP: {
+        EncodingType.AMPLITUDE: "Amplitude encoding compresses qubits but loses the inter-feature interaction terms that make IQP expressive for kernels.",
+        EncodingType.ANGLE: "Angle encoding is shallower but doesn't capture cross-feature correlations xᵢ·xⱼ — IQP has stronger theoretical basis for kernels.",
+        EncodingType.DENSE_ANGLE: "Dense angle encoding is more depth-efficient but without Rzz(xᵢ·xⱼ) terms it lacks the quantum kernel structure of IQP.",
+        EncodingType.BASIS: "Basis encoding is for binary data — IQP works with continuous data and captures inter-feature interactions.",
+        EncodingType.DATA_REUPLOADING: "Data re-uploading is better suited for training a variational ansatz; IQP is better for defining a fixed quantum kernel.",
+        EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map uses arbitrary CZ/ZZ entanglement — more flexible, but IQP has a more theoretically well-studied structure for kernels.",
+    },
     EncodingType.AMPLITUDE: {
         EncodingType.ANGLE: "Angle encoding would use 1 qubit per feature — with many features, the qubit cost would be impractical.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding would use ⌈n/2⌉ qubits — still more than amplitude for large vectors; amplitude is more compact.",
+        EncodingType.IQP: "IQP encoding uses 1 qubit per feature and adds depth with diagonal terms — amplitude is more compact when qubits are the bottleneck.",
         EncodingType.BASIS: "Basis encoding is for binary data only; amplitude encoding preserves all continuous vector information.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading uses as many qubits as features — amplitude encoding compresses everything into log₂(n) qubits.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map also uses 1 qubit per feature and adds entanglement depth — more costly with no clear advantage here.",
@@ -454,6 +497,7 @@ _ALTERNATIVES_EN: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.BASIS: {
         EncodingType.ANGLE: "Angle encoding would apply rotations to binary values — it would work, but wastes the discrete nature of the data.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding would pack bits as Ry·Rz angles — loses the natural semantics of bit → basis state.",
+        EncodingType.IQP: "IQP encoding would apply quadratic and cross terms to binary data — semantic mismatch and unnecessary cost.",
         EncodingType.AMPLITUDE: "Amplitude encoding would normalize the bits as amplitudes — loses the natural alignment between bits and basis states.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading would add unnecessary multiple layers for already-binary data.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map would add rotations and entanglement with no benefit for discrete binary data.",
@@ -461,6 +505,7 @@ _ALTERNATIVES_EN: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.DATA_REUPLOADING: {
         EncodingType.ANGLE: "Angle encoding is shallower but less expressive — with a single layer, it limits variational model capacity.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding is more qubit-efficient but without per-layer re-upload it loses expressibility for variational models.",
+        EncodingType.IQP: "IQP encoding defines a fixed kernel — data re-uploading is better suited for training a parameterized variational ansatz.",
         EncodingType.AMPLITUDE: "Amplitude encoding compresses qubits but doesn't naturally integrate with layer-by-layer variational ansatze.",
         EncodingType.BASIS: "Basis encoding is inadequate for continuous features in variational models.",
         EncodingType.CUSTOM_FEATURE_MAP: "Custom feature map is great for kernels but not the standard for trainable variational layers.",
@@ -468,6 +513,7 @@ _ALTERNATIVES_EN: dict[EncodingType, dict[EncodingType, str]] = {
     EncodingType.CUSTOM_FEATURE_MAP: {
         EncodingType.ANGLE: "Angle encoding is too simple to define an implicit kernel: without entanglement, the feature space is insufficiently expressive.",
         EncodingType.DENSE_ANGLE: "Dense angle encoding has no entanglement — without CZ/ZZ between qubits, the implicit kernel is far less expressive for QSVM.",
+        EncodingType.IQP: "IQP encoding uses diagonal Rzz terms (adjacent xᵢ·xⱼ only) — custom feature map adds full-pairwise CZ, creating a richer kernel.",
         EncodingType.AMPLITUDE: "Amplitude encoding compresses the data but doesn't create the entanglement needed for a rich quantum kernel.",
         EncodingType.BASIS: "Basis encoding is for binary data — quantum kernels work with continuous data in Hilbert space.",
         EncodingType.DATA_REUPLOADING: "Data re-uploading is more QNN/VQC-oriented; CZ/ZZ feature maps have a structure better suited for QSVM.",
@@ -522,6 +568,7 @@ def generate_qiskit_code(
         EncodingType.AMPLITUDE: _code_amplitude,
         EncodingType.ANGLE: _code_angle,
         EncodingType.DENSE_ANGLE: _code_dense_angle,
+        EncodingType.IQP: _code_iqp,
         EncodingType.BASIS: _code_basis,
         EncodingType.DATA_REUPLOADING: _code_data_reuploading,
         EncodingType.CUSTOM_FEATURE_MAP: _code_custom_feature_map,
@@ -821,4 +868,65 @@ for i in range(n_qubits):
     qc.ry(data[2 * i],     i)  # primeira feature do par
     qc.rz(data[2 * i + 1], i)  # segunda feature do par
 
+{_draw_block(lang)}{_simulation_block(lang)}"""
+
+
+def _code_iqp(
+    data: list[float], profile: DataProfile, n_qubits: int | None, lang: str
+) -> str:
+    n = n_qubits or max(1, len(data))
+    data_repr = repr(data[:n] if len(data) >= n else data + [0.0] * (n - len(data)))
+
+    if lang == "en":
+        comment = (
+            "# IQP encoding: H layer + diagonal Rz(x²) + Rzz(x[i]·x[i+1]) between adjacent pairs\n"
+            "# Rzz(θ) decomposed as CX → Rz(θ) → CX (standard decomposition)\n"
+            "# Reference: Havlíček et al., Nature 567, 209–212 (2019)"
+        )
+        tradeoff = (
+            f"# Trade-off: {n} qubit(s), depth ~ 3 + 3*(n-1) per layer.\n"
+            f"# Strong theoretical basis for quantum kernels; captures x[i]·x[j] cross-correlations.\n"
+            f"# More expressive than dense_angle for kernel methods, but deeper circuit."
+        )
+    else:
+        comment = (
+            "# IQP encoding: camada H + Rz(x²) diagonal + Rzz(x[i]·x[i+1]) entre pares adjacentes\n"
+            "# Rzz(θ) decomposto como CX → Rz(θ) → CX (decomposição padrão)\n"
+            "# Referência: Havlíček et al., Nature 567, 209–212 (2019)"
+        )
+        tradeoff = (
+            f"# Trade-off: {n} qubit(s), profundidade ~ 3 + 3*(n-1) por camada.\n"
+            f"# Base teórica forte para kernels quânticos; captura correlações cruzadas x[i]·x[j].\n"
+            f"# Mais expressivo que dense_angle para métodos de kernel, mas circuito mais profundo."
+        )
+
+    return f"""{_header(EncodingType.IQP, lang)}
+import numpy as np
+from qiskit import QuantumCircuit
+
+data = np.array({data_repr}, dtype=float)
+n_layers = 1
+
+{comment}
+n_qubits = {n}
+qc = QuantumCircuit(n_qubits, name="iqp")
+for _ in range(n_layers):
+    # Camada H: superposição
+    for i in range(n_qubits):
+        qc.h(i)
+    # Termos lineares: Rz(x[i]^2) — diagonal, sem gates dois-qubit
+    for i in range(n_qubits):
+        qc.rz(data[i] ** 2, i)
+    # Termos cruzados: Rzz(x[i]*x[i+1]) entre pares adjacentes
+    # Decomposição: CX - Rz(θ) - CX
+    for i in range(n_qubits - 1):
+        angle = data[i] * data[i + 1]
+        qc.cx(i, i + 1)
+        qc.rz(angle, i + 1)
+        qc.cx(i, i + 1)
+    # Segunda camada H: completa o bloco IQP
+    for i in range(n_qubits):
+        qc.h(i)
+
+# {tradeoff}
 {_draw_block(lang)}{_simulation_block(lang)}"""

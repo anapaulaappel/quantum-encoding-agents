@@ -18,6 +18,10 @@ _WHEN: dict[EncodingType, str] = {
         "Metade dos qubits do angle encoding com profundidade 2 (Ry·Rz por qubit): "
         "melhor escolha quando features > qubits disponíveis e dados não têm valores negativos."
     ),
+    EncodingType.IQP: (
+        "Base teórica forte para kernels: H + Rz(x²) diagonal + Rzz(x·x') entre pares. "
+        "Captura correlações entre features sem entrelaçamento arbitrário — boa escolha para QSVM em dimensão moderada."
+    ),
     EncodingType.BASIS: (
         "Ideal para dados já binários/categóricos compactos; pouco uso de superposição no encoding."
     ),
