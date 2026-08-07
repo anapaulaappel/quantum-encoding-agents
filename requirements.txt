@@ -8,3 +8,6 @@ qiskit-aer>=0.14
 
 # Variáveis de ambiente
 python-dotenv>=1.0
+
+# Visualização (Bloch sphere)
+matplotlib>=3.7

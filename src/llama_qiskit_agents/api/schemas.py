@@ -111,6 +111,11 @@ class ExplainRequest(DataInput):
         default=None,
         description="Idioma da resposta: 'pt' ou 'en'. Se omitido, detectado automaticamente.",
     )
+    include_bloch: bool = Field(
+        default=False,
+        description="Se True, gera a visualização da esfera de Bloch por qubit "
+                    "(PNG base64 em bloch_sphere_b64). Disponível apenas para circuitos com ≤6 qubits.",
+    )
 
 
 class ExplainResponse(BaseModel):
@@ -127,6 +132,15 @@ class ExplainResponse(BaseModel):
     hardware_constraints_applied: bool = Field(
         default=False,
         description="True se hardware_profile foi informado e influenciou a recomendação.",
+    )
+    bloch_sphere_b64: str | None = Field(
+        default=None,
+        description="Imagem PNG da esfera de Bloch por qubit, codificada em base64. "
+                    "None se include_bloch=False (padrão) ou se o circuito tem >6 qubits.",
+    )
+    bloch_caption: str | None = Field(
+        default=None,
+        description="Legenda explicativa para a imagem da esfera de Bloch.",
     )
 
 

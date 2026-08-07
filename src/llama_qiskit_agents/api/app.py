@@ -37,6 +37,7 @@ from llama_qiskit_agents.quantum.explanation import (
     generate_qiskit_code,
 )
 from llama_qiskit_agents.quantum.hardware_profile import HardwareProfile
+from llama_qiskit_agents.quantum.visualization import render_bloch_sphere, bloch_caption as make_bloch_caption
 from llama_qiskit_agents.api.schemas import (
     CompareRequest,
     CircuitRequest,
@@ -170,12 +171,16 @@ def recommend_explain(body: ExplainRequest) -> ExplainResponse:
     )
 
     # Simular o circuito recomendado para obter métricas reais (depth, qubits)
+    # Se include_bloch=True, captura também o statevector para a esfera de Bloch
     sim_result = None
     data_arr = raw if isinstance(raw, list) else None
     if data_arr and len(data_arr) > 0:
         try:
             qc = build_encoding_circuit(enc, data_arr, n_qubits=body.n_qubits)
-            sim_result = simulate_encoding_circuit(qc, enc, shots=body.shots)
+            sim_result = simulate_encoding_circuit(
+                qc, enc, shots=body.shots,
+                save_statevector=body.include_bloch,
+            )
         except Exception:
             pass
 
@@ -199,6 +204,16 @@ def recommend_explain(body: ExplainRequest) -> ExplainResponse:
         lang=lang,
     )
 
+    # Gerar esfera de Bloch se solicitado e statevector disponível
+    bloch_b64 = None
+    bloch_cap = None
+    if body.include_bloch and sim_result and sim_result.statevector is not None:
+        bloch_b64 = render_bloch_sphere(
+            sim_result.statevector, enc.value, lang=lang
+        )
+        if bloch_b64:
+            bloch_cap = make_bloch_caption(sim_result.num_qubits, enc.value, lang=lang)
+
     return ExplainResponse(
         lang=lang,
         recommended_encoding=enc.value,
@@ -209,6 +224,8 @@ def recommend_explain(body: ExplainRequest) -> ExplainResponse:
         circuit_depth=sim_result.depth if sim_result else None,
         circuit_qubits=sim_result.num_qubits if sim_result else None,
         hardware_constraints_applied=hw is not None,
+        bloch_sphere_b64=bloch_b64,
+        bloch_caption=bloch_cap,
     )
 
 

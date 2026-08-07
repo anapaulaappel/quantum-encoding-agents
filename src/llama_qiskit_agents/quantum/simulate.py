@@ -1,6 +1,8 @@
 """Simulação de circuitos de encoding e comparação entre estratégias."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -35,15 +37,22 @@ class SimulationResult:
     num_qubits: int
     counts: dict[str, int]
     shots: int
+    # Statevector puro antes da medição (apenas quando save_statevector=True)
+    statevector: np.ndarray | None = field(default=None, repr=False)
 
 
 def simulate_encoding_circuit(
     circuit: QuantumCircuit,
     encoding_type: EncodingType,
     shots: int = 1024,
+    save_statevector: bool = False,
 ) -> SimulationResult:
     """
     Simula um circuito de encoding: adiciona medição, transpila e executa no AerSimulator.
+
+    Args:
+        save_statevector: se True, captura também o statevector puro antes da medição
+                          via StatevectorSimulator (para visualização da esfera de Bloch).
     """
     qc = circuit.copy()
     if qc.num_clbits == 0:
@@ -52,6 +61,13 @@ def simulate_encoding_circuit(
     transpiled = transpile(qc, sim)
     job = sim.run(transpiled, shots=shots)
     counts = dict(job.result().get_counts())
+
+    # Capturar statevector separadamente se solicitado
+    sv = None
+    if save_statevector:
+        from llama_qiskit_agents.quantum.visualization import simulate_statevector
+        sv = simulate_statevector(circuit)
+
     return SimulationResult(
         encoding_type=encoding_type,
         circuit=circuit,
@@ -59,6 +75,7 @@ def simulate_encoding_circuit(
         num_qubits=qc.num_qubits,
         counts=counts,
         shots=shots,
+        statevector=sv,
     )
 
 
