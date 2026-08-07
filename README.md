@@ -142,15 +142,19 @@ Resposta inclui:
 
 | Método | Path | Descrição |
 |---|---|---|
-| `GET` | `/healthz` | Health check |
-| `POST` | `/v1/recommend/explain` | **Principal** — recomendação + explicação + código |
+| `GET` | `/health` `/healthz` | Health check |
+| `POST` | `/v1/recommend/explain` | **Principal** — recomendação + explicação + código Qiskit + Bloch sphere |
 | `POST` | `/v1/recommend` | Recomendação estruturada (JSON) |
+| `POST` | `/v1/analyze` | Perfil do dado (DataProfile) |
 | `POST` | `/v1/compare` | Ranking comparativo dos 7 encodings |
 | `POST` | `/v1/compare/csv` | Upload CSV multipart |
-| `POST` | `/v1/kernel` | **Matriz de kernel quântico** K[i,j]=\|⟨φ(xᵢ)\|φ(xⱼ)⟩\|² + heatmap |
+| `POST` | `/v1/kernel` | **Matriz de kernel quântico** K[i,j]=\|⟨φ(xᵢ)\|φ(xⱼ)⟩\|² + KTA + heatmap |
 | `POST` | `/v1/circuit` | Diagrama ASCII do circuito |
-| `POST` | `/v1/simulate` | Simula e retorna histograma de medições |
+| `POST` | `/v1/simulate` | Histograma de medições |
 | `GET` | `/v1/tradeoffs` | Trade-offs de todos os encodings |
+| `GET` | `/v1/scenarios-guide` | Guia de cenários QML |
+| `GET` | `/v1/analyze/text?q=` | Análise rápida por query string |
+| `GET` | `/chat` | Interface web (chat.html) |
 | `GET` | `/docs` | Swagger interativo |
 
 ### Exemplo: matriz de kernel com labels de classe
@@ -273,15 +277,18 @@ Usuário (chat ou curl)
 quantum-encoding-agents/
 ├── src/llama_qiskit_agents/
 │   ├── quantum/
-│   │   ├── encodings.py        # 5 circuit builders + EncodingType enum
-│   │   ├── data_analysis.py    # DataProfile + recommend_encoding
-│   │   ├── problem_context.py  # MLTask, ProblemContext, refine_recommendation
-│   │   ├── explanation.py      # detect_language + frases narrativas + código Qiskit
-│   │   ├── encoding_ranking.py # ranking formatado para relatório
-│   │   └── simulate.py         # AerSimulator orchestration
+│   │   ├── encodings.py         # 7 circuit builders + EncodingType enum
+│   │   ├── data_analysis.py     # DataProfile + recommend_encoding
+│   │   ├── problem_context.py   # MLTask, ProblemContext, refine_recommendation
+│   │   ├── hardware_profile.py  # HardwareProfile, limiar p*=1e-3 (NISQ-aware)
+│   │   ├── explanation.py       # detect_language + narrativas PT/EN + código Qiskit
+│   │   ├── visualization.py     # Bloch sphere via StatevectorSimulator + matplotlib
+│   │   ├── kernel.py            # FidelityStatevectorKernel, KTA, heatmap
+│   │   ├── encoding_ranking.py  # ranking formatado para relatório
+│   │   └── simulate.py          # AerSimulator orchestration
 │   ├── api/
-│   │   ├── app.py              # FastAPI endpoints
-│   │   └── schemas.py          # Pydantic models (inclui ExplainRequest/Response)
+│   │   ├── app.py               # FastAPI — todos os endpoints
+│   │   └── schemas.py           # Pydantic models (HardwareProfileInput, KernelRequest, etc.)
 │   └── agents/
 │       └── encoding_agent.py   # 6 tool functions para Llama Stack
 ├── openclaw-openshift/

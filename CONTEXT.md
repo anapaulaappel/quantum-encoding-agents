@@ -12,7 +12,7 @@ Pacote Python que conecta **Llama Stack** (LLMs com function-calling) ao **Qiski
 2. Recomenda a melhor estratégia de encoding
 3. Gera o circuito Qiskit correspondente
 4. Simula via `AerSimulator` (CPU, sem hardware real)
-5. Produz relatório comparativo das 5 estratégias
+5. Produz relatório comparativo das 7 estratégias
 
 Exposto via **FastAPI** (`/v1/…`) e **UI web** (`/chat`).
 
@@ -31,12 +31,16 @@ llama-qiskit-agents/
 │   │   ├── schemas.py         # Pydantic models request/response
 │   │   └── static/chat.html   # UI web (dark, form → /v1/compare/csv)
 │   └── quantum/
-│       ├── encodings.py       # EncodingType enum + 5 circuit builders
-│       ├── data_analysis.py   # CSV load, DataProfile, recommend_encoding
-│       ├── problem_context.py # MLTask, ProblemContext, refine_recommendation
-│       ├── encoding_ranking.py# Formatação do ranking + nota de medições
-│       ├── simulate.py        # AerSimulator orchestration + format_comparison_report
-│       └── circuits.py        # Bell + simple circuit (demo apenas)
+│       ├── encodings.py        # EncodingType enum + 7 circuit builders
+│       ├── data_analysis.py    # CSV load, DataProfile, recommend_encoding
+│       ├── problem_context.py  # MLTask, ProblemContext, refine_recommendation
+│       ├── hardware_profile.py # HardwareProfile, limiar p*=1e-3 (NISQ-aware)
+│       ├── explanation.py      # detect_language + narrativas PT/EN + código Qiskit
+│       ├── visualization.py    # Bloch sphere via StatevectorSimulator + matplotlib
+│       ├── kernel.py           # FidelityStatevectorKernel, KTA, heatmap
+│       ├── encoding_ranking.py # Formatação do ranking + nota de medições
+│       ├── simulate.py         # AerSimulator orchestration + format_comparison_report
+│       └── circuits.py         # Bell + simple circuit (demo apenas)
 ├── scripts/
 │   ├── run_encoding_agent.py  # CLI principal (sem Llama Stack)
 │   ├── run_api.py             # Inicia uvicorn
@@ -54,7 +58,7 @@ llama-qiskit-agents/
 
 | Struct | Arquivo | Tipo | Campos principais |
 |--------|---------|------|-------------------|
-| `EncodingType` | `encodings.py:11` | `str+Enum` | `amplitude`, `angle`, `basis`, `data_reuploading`, `custom_feature_map` |
+| `EncodingType` | `encodings.py:11` | `str+Enum` | `amplitude`, `angle`, `dense_angle`, `iqp`, `basis`, `data_reuploading`, `custom_feature_map` |
 | `DataProfile` | `data_analysis.py:61` | `@dataclass` | `n_samples`, `n_features`, `is_binary`, `is_categorical`, `is_continuous`, `has_negative`, `description` |
 | `MLTask` | `problem_context.py:10` | `str+Enum` | `classification`, `clustering`, `encoding_only`, `kernel_method`, `variational`, `unknown` |
 | `ProblemContext` | `problem_context.py:21` | `@dataclass` | `task`, `algorithm`, `raw_hints`, `inferred_note`, `has_explicit_info()` |
@@ -124,8 +128,10 @@ CSV / array / texto
 | `GET /` | Info do serviço |
 | `POST /v1/analyze` | Perfil do dado (`DataInput` JSON) → `ProfileResponse` |
 | `POST /v1/recommend` | Recomendação (`DataInput` JSON) → `RecommendResponse` |
-| `POST /v1/compare` | Relatório completo (`CompareRequest` JSON) → plain text |
+| `POST /v1/recommend/explain` | **Principal** — recomendação + explicação PT/EN + código Qiskit + Bloch sphere |
+| `POST /v1/compare` | Ranking completo (`CompareRequest` JSON) → plain text |
 | `POST /v1/compare/csv` | Upload CSV multipart → relatório plain text |
+| `POST /v1/kernel` | Matriz de kernel quântico K[i,j] + KTA + heatmap PNG |
 | `GET /v1/tradeoffs` | Trade-offs de todos os encodings |
 | `GET /v1/scenarios-guide` | Guia de cenários QML |
 | `POST /v1/circuit` | Gera circuito (`CircuitRequest` JSON) → diagrama texto |

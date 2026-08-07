@@ -82,7 +82,7 @@ def generate_qiskit_circuit(
 ) -> str:
     """
     Gera o circuito Qiskit para o encoding escolhido.
-    encoding_name: um de amplitude, angle, basis, data_reuploading, custom_feature_map.
+    encoding_name: amplitude | angle | dense_angle | iqp | basis | data_reuploading | custom_feature_map
     """
     try:
         enc = EncodingType(encoding_name.strip().lower().replace(" ", "_"))
@@ -187,7 +187,7 @@ def encoding_agent_tools_for_llama() -> list[dict[str, Any]]:
                     "properties": {
                         "encoding_name": {
                             "type": "string",
-                            "enum": ["amplitude", "angle", "basis", "data_reuploading", "custom_feature_map"],
+                            "enum": ["amplitude", "angle", "dense_angle", "iqp", "basis", "data_reuploading", "custom_feature_map"],
                             "description": "Tipo de encoding quântico.",
                         },
                         "data": {
@@ -212,7 +212,7 @@ def encoding_agent_tools_for_llama() -> list[dict[str, Any]]:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "encoding_name": {"type": "string", "enum": ["amplitude", "angle", "basis", "data_reuploading", "custom_feature_map"]},
+                        "encoding_name": {"type": "string", "enum": ["amplitude", "angle", "dense_angle", "iqp", "basis", "data_reuploading", "custom_feature_map"]},
                         "data": {"type": "array", "items": {"type": "number"}},
                         "n_qubits": {"type": "integer"},
                         "shots": {"type": "integer", "description": "Número de shots da simulação.", "default": 1024},
