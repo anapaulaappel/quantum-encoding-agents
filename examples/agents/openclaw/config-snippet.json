@@ -1,0 +1,27 @@
+{
+  "skills": {
+    "quantum-encoding": {
+      "description": "Quantum encoding selection, simulation, kernels (K_ij), KTA via llama-qiskit-agents API",
+      "endpoints": {
+        "tools_list": "{{QISKIT_API_URL}}/v1/tools",
+        "dispatch": "{{QISKIT_API_URL}}/v1/tools/dispatch",
+        "explain_one_shot": "{{QISKIT_API_URL}}/v1/recommend/explain"
+      },
+      "allowed_hosts": [
+        "llama-qiskit-agents",
+        "llama-qiskit-agents.openclaw.svc.cluster.local",
+        "localhost:8080"
+      ]
+    }
+  },
+  "agents": {
+    "qiskit_expert": {
+      "soul": "agents/circuit/SOUL.md",
+      "skills": ["quantum-encoding"]
+    },
+    "qiskit_mentor": {
+      "soul": "agents/quanta/SOUL.md",
+      "skills": ["quantum-encoding"]
+    }
+  }
+}

@@ -26,7 +26,7 @@ CSV input + parâmetros QML
     │         │
     ▼         ▼
 ┌─────────┐ ┌────────────────────┐
-│ 3.      │ │ 4. compute_kernel  │  POST /v1/kernel → K[i,j] + KTA
+│ 3.      │ │ 4. compute_kernel  │  POST /v1/kernel → K_{ij} + KTA
 │ compare │ │ (se labels         │
 │ 7 encs  │ │  fornecidos)       │
 └────┬────┘ └────────┬───────────┘
@@ -204,3 +204,12 @@ python submit.py --dsp-endpoint "https://$DSP_HOST" \
 
 Reduza `--max-kernel-samples`. A complexidade é O(N²) — 50 amostras = 2500 pares.
 Para datasets grandes, use amostragem estratificada antes de passar ao pipeline.
+
+---
+
+## Variante agentica (sem MLflow)
+
+Para runs com `/v1/tools/dispatch`, `/v1/agent/chat` e consolidação de artefatos (MLflow documentado, não incluído):
+
+- [RHOAI-AGENTS.md](./RHOAI-AGENTS.md)
+- `python submit.py --variant agents --compile-only`

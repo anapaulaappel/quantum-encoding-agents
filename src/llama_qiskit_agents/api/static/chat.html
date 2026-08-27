@@ -3,116 +3,237 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Encoding quântico — CSV</title>
+  <title>Quantum Encoding Agents — Chat</title>
   <style>
-    :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e7e9ea; }
-    body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; }
-    textarea, input[type="file"] { width: 100%; box-sizing: border-box; }
-    textarea {
-      min-height: 10rem;
-      background: #16181c;
-      color: inherit;
-      border: 1px solid #38444d;
-      border-radius: 8px;
-      padding: 0.75rem;
-      font-size: 0.95rem;
-      line-height: 1.5;
+    :root {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f1419;
+      color: #e7e9ea;
+      --border: #38444d;
+      --panel: #16181c;
+      --muted: #8b98a5;
+      --accent: #1d9bf0;
+      --user-bg: #1a3a52;
+      --assistant-bg: #16181c;
     }
-    input[type="file"] {
-      padding: 0.5rem 0;
-      font-size: 0.9rem;
+    * { box-sizing: border-box; }
+    body { max-width: 48rem; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 1rem; border-bottom: 1px solid var(--border); }
+    h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.35rem; }
+    .subtitle { font-size: 0.82rem; color: var(--muted); line-height: 1.4; margin: 0; }
+    .controls {
+      display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.85rem; align-items: center;
     }
-    button[type="submit"] {
-      width: 100%;
-      margin-top: 1rem;
-      padding: 0.75rem 1rem;
-      background: #1d9bf0;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 1rem;
-      cursor: pointer;
+    .controls label { font-size: 0.78rem; color: var(--muted); }
+    select, input[type="text"] {
+      background: var(--panel); color: inherit; border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.35rem 0.5rem; font-size: 0.85rem;
     }
-    button[type="submit"]:hover:not(:disabled) { filter: brightness(1.08); }
-    button[type="submit"]:disabled { opacity: 0.55; cursor: not-allowed; }
-    label { font-size: 0.85rem; color: #8b98a5; display: block; margin: 1rem 0 0.35rem; }
-    .hint { font-size: 0.8rem; color: #8b98a5; margin-top: 0.25rem; line-height: 1.4; }
-    #out {
-      margin-top: 1.5rem;
-      white-space: pre-wrap;
-      background: #16181c;
-      border: 1px solid #38444d;
-      border-radius: 8px;
-      padding: 1rem;
-      min-height: 4rem;
-      font-size: 0.85rem;
-      line-height: 1.45;
+    .mode-toggle { display: flex; gap: 0.25rem; }
+    .mode-toggle button {
+      background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+      padding: 0.35rem 0.65rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
     }
+    .mode-toggle button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    #messages {
+      flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
+      min-height: 16rem; max-height: calc(100vh - 16rem);
+    }
+    .msg { border-radius: 10px; padding: 0.75rem 0.9rem; max-width: 95%; white-space: pre-wrap; line-height: 1.45; font-size: 0.9rem; }
+    .msg.user { align-self: flex-end; background: var(--user-bg); border: 1px solid #2a5570; }
+    .msg.assistant { align-self: flex-start; background: var(--assistant-bg); border: 1px solid var(--border); }
+    .msg.system { align-self: center; font-size: 0.78rem; color: var(--muted); background: transparent; border: none; padding: 0.25rem; }
+    .tools-used { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; border-top: 1px dashed var(--border); padding-top: 0.4rem; }
+    footer { border-top: 1px solid var(--border); padding: 0.85rem 1rem 1rem; background: #0f1419; }
+    .attach-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
+    .attach-row input[type="file"] { font-size: 0.8rem; color: var(--muted); max-width: 100%; }
+    .attach-name { font-size: 0.78rem; color: var(--accent); }
+    textarea#input {
+      width: 100%; min-height: 4.5rem; resize: vertical;
+      background: var(--panel); color: inherit; border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.65rem 0.75rem; font-size: 0.92rem; line-height: 1.45;
+    }
+    .send-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    button#send {
+      flex: 1; padding: 0.65rem 1rem; background: var(--accent); color: #fff;
+      border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem;
+    }
+    button#send:disabled { opacity: 0.5; cursor: not-allowed; }
+    button#clear { padding: 0.65rem 0.85rem; background: var(--panel); color: var(--muted); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
     .err { color: #f4212e; }
   </style>
 </head>
 <body>
-  <h1>Recomendação de encoding quântico</h1>
-  <p class="hint">Envie um CSV com colunas numéricas e descreva o problema e o que deseja fazer (ex.: classificação com QSVM, só preparar estado, clusterização). O texto é analisado junto com os dados.</p>
+  <header>
+    <h1>Quantum Encoding Agents</h1>
+    <p class="subtitle">
+      Modo <strong>Agente</strong>: LLM + tools quânticas via <code>/v1/agent/chat</code>.
+      Modo <strong>Direto</strong>: relatório determinístico via <code>/v1/compare/csv</code> (sem LLM).
+    </p>
+    <div class="controls">
+      <div>
+        <label for="persona">Persona</label><br />
+        <select id="persona">
+          <option value="default">Default</option>
+          <option value="expert">Circuit (expert)</option>
+          <option value="mentor">Quanta (mentor)</option>
+        </select>
+      </div>
+      <div>
+        <label for="labelCol">Coluna label (CSV)</label><br />
+        <input id="labelCol" type="text" placeholder="auto" style="width: 7rem;" />
+      </div>
+      <div>
+        <label><input id="optimizeFeatures" type="checkbox" /> Otimizar ordem/peso</label>
+      </div>
+      <div>
+        <label>Modo</label><br />
+        <div class="mode-toggle">
+          <button type="button" id="modeAgent" class="active">Agente</button>
+          <button type="button" id="modeDirect">Direto</button>
+        </div>
+      </div>
+    </div>
+  </header>
 
-  <form id="form">
-    <label for="csv">Arquivo CSV</label>
-    <input id="csv" name="file" type="file" accept=".csv,text/csv" required />
+  <div id="messages" aria-live="polite">
+    <div class="msg system">Descreva seu problema QML ou anexe um CSV. Configure Ollama (AGENT_*) para o modo Agente.</div>
+  </div>
 
-    <label for="problem">Problema e objetivo</label>
-    <textarea
-      id="problem"
-      name="problem_description"
-      placeholder="Ex.: Tenho features contínuas e quero classificar com um variational quantum classifier. Ou: quero usar quantum kernel SVM para separar duas classes."
-      required
-    ></textarea>
-
-    <button type="submit" id="submit">Analisar e comparar encodings</button>
-  </form>
-
-  <label for="out">Resultado</label>
-  <div id="out" aria-live="polite">Preencha o formulário e envie.</div>
+  <footer>
+    <div class="attach-row">
+      <input id="csv" type="file" accept=".csv,text/csv" />
+      <span id="csvName" class="attach-name"></span>
+    </div>
+    <textarea id="input" placeholder="Ex.: Tenho 8 features contínuas e labels — qual encoding maximiza KTA para QSVM?"></textarea>
+    <div class="send-row">
+      <button type="button" id="clear">Limpar</button>
+      <button type="button" id="send">Enviar</button>
+    </div>
+  </footer>
 
   <script>
     const API_BASE = '';
-    const form = document.getElementById('form');
-    const out = document.getElementById('out');
-    const submitBtn = document.getElementById('submit');
+    let mode = 'agent';
+    let history = [];
+    let csvText = null;
+    let csvFileName = '';
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fileInput = document.getElementById('csv');
-      const problem = document.getElementById('problem').value.trim();
-      if (!fileInput.files.length) {
-        out.innerHTML = '<span class="err">Selecione um arquivo CSV.</span>';
-        return;
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const csvInput = document.getElementById('csv');
+    const csvNameEl = document.getElementById('csvName');
+
+    document.getElementById('modeAgent').addEventListener('click', () => setMode('agent'));
+    document.getElementById('modeDirect').addEventListener('click', () => setMode('direct'));
+
+    function setMode(m) {
+      mode = m;
+      document.getElementById('modeAgent').classList.toggle('active', m === 'agent');
+      document.getElementById('modeDirect').classList.toggle('active', m === 'direct');
+    }
+
+    csvInput.addEventListener('change', async () => {
+      csvText = null;
+      csvFileName = '';
+      csvNameEl.textContent = '';
+      const f = csvInput.files[0];
+      if (!f) return;
+      csvText = await f.text();
+      csvFileName = f.name;
+      csvNameEl.textContent = f.name + ' (' + Math.round(f.size / 1024) + ' KB)';
+    });
+
+    function appendMsg(role, text, toolCalls) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + (role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant');
+      div.textContent = text;
+      if (toolCalls && toolCalls.length) {
+        const t = document.createElement('div');
+        t.className = 'tools-used';
+        t.textContent = 'Tools: ' + toolCalls.map((c) => c.name).join(', ');
+        div.appendChild(t);
       }
-      if (!problem) {
-        out.innerHTML = '<span class="err">Descreva o problema e o que deseja fazer.</span>';
-        return;
-      }
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }
 
-      const fd = new FormData();
-      fd.append('file', fileInput.files[0]);
-      fd.append('problem_description', problem);
-      fd.append('shots', '512');
+    document.getElementById('clear').addEventListener('click', () => {
+      history = [];
+      messagesEl.innerHTML = '<div class="msg system">Conversa limpa.</div>';
+    });
 
-      submitBtn.disabled = true;
-      out.textContent = 'Processando…';
-
-      try {
-        const r = await fetch(API_BASE + '/v1/compare/csv', { method: 'POST', body: fd });
-        const text = await r.text();
-        if (!r.ok) throw new Error(text || r.statusText);
-        out.textContent = text;
-      } catch (err) {
-        out.innerHTML = '<span class="err">' + String(err.message || err) + '</span>';
-      } finally {
-        submitBtn.disabled = false;
+    sendBtn.addEventListener('click', sendMessage);
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
       }
     });
+
+    async function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text && !csvText) return;
+      if (mode === 'direct' && !csvText) {
+        appendMsg('system', 'Modo Direto exige CSV anexado.');
+        return;
+      }
+
+      const displayText = text || '(CSV anexado — analisar encodings)';
+      appendMsg('user', displayText + (csvFileName ? '\n📎 ' + csvFileName : ''));
+      inputEl.value = '';
+      sendBtn.disabled = true;
+
+      try {
+        if (mode === 'direct') {
+          const fd = new FormData();
+          const blob = new Blob([csvText], { type: 'text/csv' });
+          fd.append('file', blob, csvFileName || 'data.csv');
+          fd.append('problem_description', text || 'Compare encodings');
+          fd.append('shots', '512');
+          const lc = document.getElementById('labelCol').value.trim();
+          if (lc) fd.append('label_column', lc);
+          if (document.getElementById('optimizeFeatures').checked) {
+            fd.append('optimize_features', 'true');
+          }
+          const r = await fetch(API_BASE + '/v1/compare/csv', { method: 'POST', body: fd });
+          const body = await r.text();
+          if (!r.ok) throw new Error(body || r.statusText);
+          appendMsg('assistant', body);
+        } else {
+          const payload = {
+            message: text || 'Analise o CSV anexado e recomende o melhor encoding quântico.',
+            persona: document.getElementById('persona').value,
+            history: history,
+            max_tool_rounds: 8,
+          };
+          if (csvText) {
+            payload.csv_content = csvText;
+            const lc = document.getElementById('labelCol').value.trim();
+            if (lc) payload.label_column = lc;
+          }
+          const r = await fetch(API_BASE + '/v1/agent/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.detail || r.statusText);
+          appendMsg('assistant', data.reply || '(sem resposta)', data.tool_calls);
+          history.push({ role: 'user', content: displayText });
+          history.push({ role: 'assistant', content: data.reply || '' });
+        }
+      } catch (err) {
+        appendMsg('assistant', 'Erro: ' + (err.message || err), null);
+        const last = messagesEl.lastElementChild;
+        if (last) last.classList.add('err');
+      } finally {
+        sendBtn.disabled = false;
+        inputEl.focus();
+      }
+    }
   </script>
 </body>
 </html>

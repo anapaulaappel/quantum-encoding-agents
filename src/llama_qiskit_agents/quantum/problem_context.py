@@ -275,7 +275,7 @@ def refine_recommendation(
         if hw.has_swap_overhead() and enc == EncodingType.CUSTOM_FEATURE_MAP:
             segments.append(
                 f"Atenção: custom_feature_map usa CZ full-pairwise — em topologia '{hw.connectivity}' "
-                f"isso gera overhead de SWAP. Considere IQP (Rzz apenas entre pares adjacentes) "
+                f"isso gera overhead de SWAP. Considere IQP com pairwise='adjacent' "
                 f"ou data_reuploading (CX em cadeia linear) para reduzir profundidade transpilada."
             )
 
@@ -286,7 +286,8 @@ def refine_recommendation(
                 EncodingType.DENSE_ANGLE: 2,
                 EncodingType.BASIS: 1,
                 EncodingType.DATA_REUPLOADING: 4 * profile.n_features,
-                EncodingType.IQP: 3 + 3 * max(0, profile.n_features - 1),
+                EncodingType.IQP: 3 * profile.n_features
+                + 3 * max(0, profile.n_features * (profile.n_features - 1) // 2),
                 EncodingType.CUSTOM_FEATURE_MAP: 3 * profile.n_features,
                 EncodingType.AMPLITUDE: 4 * profile.n_features,
             }

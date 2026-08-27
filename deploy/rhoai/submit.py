@@ -56,16 +56,33 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-kernel-samples", type=int, default=20,
                    help="Máximo de amostras para cálculo do kernel (custo O(N²))")
 
+    # Variante do pipeline
+    p.add_argument("--variant", default="classic", choices=["classic", "agents"],
+                   help="classic: compare + MLflow | agents: dispatch + /v1/agent/chat (sem MLflow)")
+    p.add_argument("--agent-persona", default="expert",
+                   help="Persona para /v1/agent/chat (variante agents)")
+    p.add_argument("--label-column", default="",
+                   help="Coluna de label no CSV (variante agents / compare dispatch)")
+    p.add_argument("--max-tool-rounds", type=int, default=6,
+                   help="Rodadas ReAct no agente (variante agents)")
+
     # Compilação
     p.add_argument("--compile-only", action="store_true",
                    help="Apenas compila o pipeline YAML, não submete")
-    p.add_argument("--pipeline-yaml", default="quantum_encoding_pipeline.yaml",
-                   help="Caminho do YAML compilado")
+    p.add_argument("--pipeline-yaml", default="",
+                   help="Caminho do YAML compilado (default: depende de --variant)")
     return p
 
 
 def main():
     args = get_parser().parse_args()
+
+    if not args.pipeline_yaml:
+        args.pipeline_yaml = (
+            "quantum_encoding_pipeline_agents.yaml"
+            if args.variant == "agents"
+            else "quantum_encoding_pipeline.yaml"
+        )
 
     # Carrega CSV de arquivo se informado
     csv_content = args.csv_content
@@ -82,13 +99,17 @@ def main():
     rhoai_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, rhoai_dir)
 
-    from pipeline import quantum_encoding_pipeline
     from kfp import compiler
 
+    if args.variant == "agents":
+        from pipeline_agents import quantum_encoding_pipeline_agents as pipeline_func
+    else:
+        from pipeline import quantum_encoding_pipeline as pipeline_func
+
     # Compilar
-    print(f"Compilando pipeline → {args.pipeline_yaml}")
+    print(f"Compilando pipeline ({args.variant}) → {args.pipeline_yaml}")
     compiler.Compiler().compile(
-        pipeline_func=quantum_encoding_pipeline,
+        pipeline_func=pipeline_func,
         package_path=args.pipeline_yaml,
     )
     print("Pipeline compilado com sucesso.")
@@ -113,27 +134,48 @@ def main():
         import kfp
         client = kfp.Client(host=args.dsp_endpoint)
 
-        run = client.create_run_from_pipeline_func(
-            quantum_encoding_pipeline,
-            arguments={
-                "csv_content":       csv_content,
-                "labels_csv":        args.labels,
-                "task":              args.task,
-                "algorithm":         args.algorithm,
+        if args.variant == "agents":
+            arguments = {
+                "csv_content": csv_content,
+                "labels_csv": args.labels,
+                "task": args.task,
+                "algorithm": args.algorithm,
                 "problem_description": args.problem,
-                "gate_error_rate":   args.hw_error,
-                "connectivity":      args.connectivity,
-                "max_depth_budget":  args.max_depth,
-                "api_url":           args.api_url,
-                "mlflow_tracking_uri": args.mlflow_uri,
-                "experiment_name":   args.experiment,
-                "run_name":          args.run_name,
-                "lang":              args.lang,
-                "shots":             args.shots,
+                "gate_error_rate": args.hw_error,
+                "connectivity": args.connectivity,
+                "max_depth_budget": args.max_depth,
+                "api_url": args.api_url,
+                "lang": args.lang,
+                "shots": args.shots,
                 "max_kernel_samples": args.max_kernel_samples,
-            },
+                "agent_persona": args.agent_persona,
+                "label_column": args.label_column,
+                "max_tool_rounds": args.max_tool_rounds,
+            }
+        else:
+            arguments = {
+                "csv_content": csv_content,
+                "labels_csv": args.labels,
+                "task": args.task,
+                "algorithm": args.algorithm,
+                "problem_description": args.problem,
+                "gate_error_rate": args.hw_error,
+                "connectivity": args.connectivity,
+                "max_depth_budget": args.max_depth,
+                "api_url": args.api_url,
+                "mlflow_tracking_uri": args.mlflow_uri,
+                "experiment_name": args.experiment,
+                "run_name": args.run_name,
+                "lang": args.lang,
+                "shots": args.shots,
+                "max_kernel_samples": args.max_kernel_samples,
+            }
+
+        run = client.create_run_from_pipeline_func(
+            pipeline_func,
+            arguments=arguments,
             experiment_name=args.experiment,
-            run_name=args.run_name or "quantum-encoding-run",
+            run_name=args.run_name or f"quantum-encoding-{args.variant}",
         )
         print(f"\nPipeline submetido com sucesso!")
         print(f"Run ID: {run.run_id}")

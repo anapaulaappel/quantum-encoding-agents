@@ -37,6 +37,13 @@ spec:
               # Troque pelo domínio real se precisar de acesso externo.
               value: "http://localhost:18789,https://openclaw-openclaw.apps.<SEU_DOMINIO>"
             # Llama Stack é opcional — o pipeline quantum funciona sem ele.
+            # Modo agentico (/v1/agent/chat, UI /chat): configure LLM (ex.: Ollama sidecar):
+            # - name: AGENT_BACKEND
+            #   value: "ollama"
+            # - name: AGENT_MODEL
+            #   value: "qwen2.5-coder:14b"
+            # - name: OLLAMA_HOST
+            #   value: "http://ollama.openclaw.svc.cluster.local:11434"
             # Descomente se quiser conectar ao Llama Stack:
             # - name: LLAMA_STACK_CLIENT_BASE_URL
             #   value: "http://llama-stack.openclaw.svc.cluster.local:8321"

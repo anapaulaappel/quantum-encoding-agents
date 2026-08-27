@@ -19,8 +19,8 @@ _WHEN: dict[EncodingType, str] = {
         "melhor escolha quando features > qubits disponíveis e dados não têm valores negativos."
     ),
     EncodingType.IQP: (
-        "Base teórica forte para kernels: H + Rz(x²) diagonal + Rzz(x·x') entre pares. "
-        "Captura correlações entre features sem entrelaçamento arbitrário — boa escolha para QSVM em dimensão moderada."
+        "Base teórica forte para kernels: H + Rz(x²) diagonal + Rzz(x·x') em todos os pares "
+        "(Hamiltoniano ZZ restrito). Captura correlações entre features — boa escolha para QSVM."
     ),
     EncodingType.BASIS: (
         "Ideal para dados já binários/categóricos compactos; pouco uso de superposição no encoding."
@@ -77,6 +77,7 @@ def format_encoding_ranking_section(
     full_recommendation_reason: str,
     results: list,
     problem_context: ProblemContext | None = None,
+    kta_by_encoding: dict[EncodingType, float] | None = None,
 ) -> list[str]:
     """
     Blocos de texto para o relatório: ranking ordenado com 'por quê'.
@@ -92,10 +93,18 @@ def format_encoding_ranking_section(
 
     header = [
         "=== Ranking de encodings (do mais adequado às alternativas) ===",
-        "Critério: encaixe com o perfil do dado e com a tarefa/algoritmo QML que você informou — "
-        "não pela frequência das medições no simulador.",
-        "",
     ]
+    if kta_by_encoding:
+        header.append(
+            "Critério principal: KTA (Kernel-Target Alignment) com labels do dataset — "
+            "quanto maior, melhor o alinhamento do kernel quântico com as classes."
+        )
+    else:
+        header.append(
+            "Critério: encaixe com o perfil do dado e com a tarefa/algoritmo QML que você informou — "
+            "não pela frequência das medições no simulador."
+        )
+    header.append("")
 
     if recommended not in by_type:
         ordered = sorted(
@@ -109,30 +118,64 @@ def format_encoding_ranking_section(
         ]
         for i, enc in enumerate(ordered, start=1):
             r = by_type[enc]
-            lines.append(f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}")
+            kta_note = ""
+            if kta_by_encoding and enc in kta_by_encoding:
+                kta_note = f", KTA={kta_by_encoding[enc]:.4f}"
+            lines.append(
+                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{kta_note}"
+            )
             lines.append(f"     Notas: {_WHEN[enc]}")
             lines.append("")
         return lines
 
-    ordered: list[EncodingType] = [recommended]
-    rest = [e for e in EncodingType if e in by_type and e != recommended]
-    rest_sorted = sorted(rest, key=lambda e: (by_type[e].depth, by_type[e].num_qubits))
-    ordered.extend(rest_sorted)
+    if kta_by_encoding:
+        scored = [
+            e for e in EncodingType if e in by_type and e in kta_by_encoding
+        ]
+        unscored = [e for e in EncodingType if e in by_type and e not in kta_by_encoding]
+        ordered = sorted(scored, key=lambda e: -kta_by_encoding[e])
+        ordered.extend(
+            sorted(unscored, key=lambda e: (by_type[e].depth, by_type[e].num_qubits))
+        )
+    else:
+        ordered = [recommended]
+        rest = [e for e in EncodingType if e in by_type and e != recommended]
+        ordered.extend(sorted(rest, key=lambda e: (by_type[e].depth, by_type[e].num_qubits)))
 
     summary = _first_substantive_line(full_recommendation_reason)
     lines = header.copy()
 
-    sim_rec = by_type[recommended]
+    sim_rec = by_type.get(recommended) or by_type[ordered[0]]
     for i, enc in enumerate(ordered, start=1):
         r = by_type[enc]
-        if i == 1:
-            lines.append(f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}")
+        kta_suffix = ""
+        if kta_by_encoding and enc in kta_by_encoding:
+            kta_suffix = f", KTA={kta_by_encoding[enc]:.4f}"
+        if i == 1 and kta_by_encoding and enc in kta_by_encoding:
+            lines.append(
+                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{kta_suffix}"
+            )
+            lines.append(
+                f"     Por quê (melhor KTA): alinhamento kernel-target={kta_by_encoding[enc]:.4f} "
+                f"entre {len(kta_by_encoding)} encodings avaliados."
+            )
+            if enc != recommended:
+                lines.append(
+                    f"     Nota: heurística de perfil sugeriu '{recommended.value}'; "
+                    "KTA empírico favorece este encoding para separar classes."
+                )
+        elif i == 1 and enc == recommended:
+            lines.append(
+                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{kta_suffix}"
+            )
             lines.append(f"     Por quê (escolha principal): {summary}")
         else:
             why = _alternativa_rationale(
                 enc, recommended, profile, r, sim_rec, problem_context
             )
-            lines.append(f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}")
+            lines.append(
+                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{kta_suffix}"
+            )
             lines.append(f"     Por quê (alternativa): {why}")
         lines.append("")
 

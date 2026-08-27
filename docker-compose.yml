@@ -1,4 +1,5 @@
 # Teste local: docker compose up --build
+# Modo Agente na UI /chat: Ollama deve estar acessível (host ou sidecar).
 services:
   api:
     build: .
@@ -7,3 +8,9 @@ services:
     environment:
       PORT: "8080"
       CORS_ORIGINS: "*"
+      AGENT_BACKEND: ollama
+      AGENT_MODEL: qwen2.5-coder:14b
+      # Ollama no host (Docker Desktop)
+      OLLAMA_HOST: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

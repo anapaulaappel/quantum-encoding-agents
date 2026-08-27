@@ -41,8 +41,155 @@ def load_csv_from_string(text: str) -> np.ndarray:
     """
     Parse de CSV em memória (upload HTTP). Mesmas regras que load_csv (só células numéricas).
     """
-    rows = _rows_from_csv_reader(csv.reader(io.StringIO(text.strip())))
-    return _array_from_numeric_rows(rows, "upload")
+    features, _ = load_csv_from_string_with_labels(text)
+    return features
+
+
+def _row_all_numeric(cells: list[str]) -> bool:
+    if not cells:
+        return False
+    for cell in cells:
+        try:
+            float(cell.strip())
+        except (ValueError, AttributeError):
+            return False
+    return True
+
+
+_LABEL_COLUMN_ALIASES = frozenset(
+    {"label", "class", "target", "y", "classe", "rotulo", "rótulo", "category"}
+)
+
+
+def _parse_label_value(raw: str) -> int:
+    s = raw.strip()
+    try:
+        return int(float(s))
+    except ValueError:
+        return hash(s) % 1000
+
+
+def _detect_label_column_index(header: list[str], rows: list[list[str]]) -> int | None:
+    for i, name in enumerate(header):
+        if name.strip().lower() in _LABEL_COLUMN_ALIASES:
+            return i
+    if len(header) < 2 or len(rows) < 2:
+        return None
+    last = len(header) - 1
+    values: list[int] = []
+    for row in rows:
+        if len(row) <= last:
+            continue
+        try:
+            values.append(_parse_label_value(row[last]))
+        except Exception:
+            return None
+    uniq = set(values)
+    if 2 <= len(uniq) <= 20:
+        return last
+    return None
+
+
+def load_csv_from_string_with_labels(
+    text: str,
+    label_column: str | None = None,
+) -> tuple[np.ndarray, list[int] | None]:
+    """
+    Carrega CSV com features numéricas e coluna de rótulo opcional.
+    Detecta header; label por nome (label/class/target/y) ou última coluna categórica.
+    """
+    rows_raw = [row for row in csv.reader(io.StringIO(text.strip())) if row and any(c.strip() for c in row)]
+    if not rows_raw:
+        raise ValueError("CSV vazio ou sem colunas numéricas: upload")
+
+    has_header = not _row_all_numeric(rows_raw[0])
+    header = [c.strip() for c in rows_raw[0]] if has_header else None
+    data_rows = rows_raw[1:] if has_header else rows_raw
+    if not data_rows:
+        raise ValueError("CSV sem linhas de dados: upload")
+
+    label_idx: int | None = None
+    if header is not None:
+        if label_column:
+            key = label_column.strip().lower()
+            for i, name in enumerate(header):
+                if name.strip().lower() == key:
+                    label_idx = i
+                    break
+            if label_idx is None:
+                raise ValueError(f"Coluna de label '{label_column}' não encontrada no CSV.")
+        else:
+            label_idx = _detect_label_column_index(header, data_rows)
+    else:
+        last_vals: list[int] = []
+        for row in data_rows:
+            if not row:
+                continue
+            try:
+                last_vals.append(_parse_label_value(row[-1]))
+            except Exception:
+                last_vals = []
+                break
+        if last_vals and 2 <= len(set(last_vals)) <= 20:
+            label_idx = len(data_rows[0]) - 1
+
+    feature_rows: list[list[float]] = []
+    labels: list[int] = []
+    n_cols = max(len(r) for r in data_rows)
+
+    for row in data_rows:
+        cells = row + [""] * (n_cols - len(row))
+        li = label_idx
+        if li is not None and li >= len(cells):
+            li = None
+        if li is not None:
+            labels.append(_parse_label_value(cells[li]))
+        feats: list[float] = []
+        for i, cell in enumerate(cells):
+            if li is not None and i == li:
+                continue
+            try:
+                feats.append(float(cell.strip()))
+            except (ValueError, AttributeError):
+                pass
+        if feats:
+            feature_rows.append(feats)
+
+    arr = _array_from_numeric_rows(feature_rows, "upload")
+    label_list: list[int] | None = None
+    if labels and len(labels) == arr.shape[0]:
+        label_list = labels
+    return arr, label_list
+
+
+def feature_names_from_csv_text(
+    text: str,
+    label_column: str | None = None,
+) -> list[str] | None:
+    """Nomes das colunas de feature (exclui label), se o CSV tiver header."""
+    rows_raw = [row for row in csv.reader(io.StringIO(text.strip())) if row and any(c.strip() for c in row)]
+    if not rows_raw:
+        return None
+    if _row_all_numeric(rows_raw[0]):
+        return None
+    header = [c.strip() for c in rows_raw[0]]
+
+    label_idx: int | None = None
+    if label_column:
+        key = label_column.strip().lower()
+        for i, name in enumerate(header):
+            if name.strip().lower() == key:
+                label_idx = i
+                break
+    else:
+        label_idx = _detect_label_column_index(header, rows_raw[1:])
+
+    names: list[str] = []
+    for i, name in enumerate(header):
+        if label_idx is not None and i == label_idx:
+            continue
+        names.append(name or f"col_{i}")
+    return names if names else None
 
 
 def load_csv(path: str | Path) -> np.ndarray:
@@ -230,10 +377,10 @@ def get_encoding_tradeoffs() -> dict[EncodingType, str]:
             "Ideal para dados contínuos com 5–12 features sem valores negativos."
         ),
         EncodingType.IQP: (
-            "IQP: H + Rz(xᵢ²) diagonal + Rzz(xᵢ·xⱼ) entre pares. "
+            "IQP: H + Rz(xᵢ²) diagonal + Rzz(xᵢ·xⱼ) em todos os pares (Hamiltoniano ZZ/diagonal, Havlíček). "
             "Separável em teoria de complexidade dos encodings de ângulo — "
             "base teórica forte para kernels quânticos em dimensão moderada. "
-            "Mais profundo que dense_angle, mas mais expressivo sem entrelaçamento arbitrário."
+            "Use pairwise='adjacent' em topologias lineares/NISQ."
         ),
         EncodingType.BASIS: (
             "Basis: 1 qubit por bit, ideal para dados binários/categóricos. "

@@ -73,6 +73,32 @@ Mais dois agentes de suporte:
 | `meu_agente` | Meu Agente | Assistente geral em português |
 | `quantum_news` | QubitinhoBot | Monitor de notícias de computação quântica |
 
+### Arquitetura: microserviço + tools + orquestração flexível
+
+| Camada | O que é | Onde |
+|---|---|---|
+| **Core quântico** | Preprocess, 7 encodings, KTA, otimização de mapeamento de features, simulação | `src/llama_qiskit_agents/quantum/` |
+| **Tools** | 9 funções + `dispatch_tool` (fonte única) | `agents/tool_registry.py` |
+| **REST one-shot** | Pipelines fixos (Kubeflow, curl) | `/v1/recommend/explain`, `/v1/compare`, … |
+| **Agent harness** | LLM + function calling → tools | `scripts/run_agent_harness.py`, `/v1/agent/chat` |
+| **OpenClaw** (opcional) | Personas + canais | `examples/agents/openclaw/` |
+
+OpenClaw **não é obrigatório**. Outras opções: Ollama local, Llama Stack, LangGraph/CrewAI via
+`POST /v1/tools/dispatch`. Guia completo: [`examples/agents/README.md`](examples/agents/README.md).
+
+```bash
+# Listar tools (schema OpenAI)
+curl -s http://localhost:8080/v1/tools | python3 -m json.tool
+
+# Executar tool (qualquer agente externo)
+curl -s -X POST http://localhost:8080/v1/tools/dispatch \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"recommend_embedding_strategy","arguments":{"dataset_or_description":"6 continuous features"}}'
+
+# Harness CLI + Ollama
+python3 scripts/run_agent_harness.py --persona expert "Qual encoding para QSVM?"
+```
+
 ---
 
 ## Início rápido — local (Docker Compose + Ollama)
@@ -147,14 +173,18 @@ Resposta inclui:
 | `POST` | `/v1/recommend` | Recomendação estruturada (JSON) |
 | `POST` | `/v1/analyze` | Perfil do dado (DataProfile) |
 | `POST` | `/v1/compare` | Ranking comparativo dos 7 encodings |
-| `POST` | `/v1/compare/csv` | Upload CSV multipart |
-| `POST` | `/v1/kernel` | **Matriz de kernel quântico** K[i,j]=\|⟨φ(xᵢ)\|φ(xⱼ)⟩\|² + KTA + heatmap |
+| `POST` | `/v1/compare/csv` | Upload CSV multipart (+ `optimize_features=true` com labels: ordem/seleção/peso) |
+| `POST` | `/v1/kernel` | Matriz de kernel K_{ij} + KTA + heatmap |
+| `GET` | `/v1/tools` | Schemas de tools (OpenAI / OpenClaw) |
+| `POST` | `/v1/tools/dispatch` | Executa uma tool (integração agentes) |
+| `GET` | `/v1/tools/openclaw-skill.md` | Skill Markdown para OpenClaw |
+| `POST` | `/v1/agent/chat` | Turno agentico (LLM + tools, env AGENT_*) |
 | `POST` | `/v1/circuit` | Diagrama ASCII do circuito |
 | `POST` | `/v1/simulate` | Histograma de medições |
 | `GET` | `/v1/tradeoffs` | Trade-offs de todos os encodings |
 | `GET` | `/v1/scenarios-guide` | Guia de cenários QML |
 | `GET` | `/v1/analyze/text?q=` | Análise rápida por query string |
-| `GET` | `/chat` | Interface web (chat.html) |
+| `GET` | `/chat` | **UI web** — chat agentico (`/v1/agent/chat`) ou compare CSV direto |
 | `GET` | `/docs` | Swagger interativo |
 
 ### Exemplo: matriz de kernel com labels de classe
@@ -176,6 +206,36 @@ treinar qualquer classificador quântico.
 
 ---
 
+## Interface web (`/chat`)
+
+Com a API rodando (`docker compose up` ou `python scripts/run_api.py`):
+
+```
+http://localhost:8080/chat
+```
+
+| Modo | Endpoint | Requisitos |
+|------|----------|------------|
+| **Agente** (padrão) | `POST /v1/agent/chat` | Ollama ou LLM configurado (`AGENT_*`) |
+| **Direto** | `POST /v1/compare/csv` | Só CSV + descrição (sem LLM) |
+
+A UI suporta **personas** (Default, Circuit, Quanta), **histórico multi-turn**, anexo CSV
+(com ranking KTA via tool `compare_csv_embeddings` no modo Agente) e coluna de label opcional.
+
+```bash
+# Docker + Ollama no host (macOS/Linux)
+docker compose up --build
+# Acesse http://localhost:8080/chat
+
+# Ou API local + Ollama nativo
+export OLLAMA_HOST=http://localhost:11434
+export AGENT_MODEL=qwen2.5-coder:14b
+pip install -e ".[api]"
+python scripts/run_api.py
+```
+
+---
+
 ## CLI (sem Docker, sem OpenClaw)
 
 ```bash
@@ -192,6 +252,9 @@ python3 scripts/run_encoding_agent.py --data 0.1 0.2 0.3 --task kernel --algorit
 
 # Apenas trade-offs
 python3 scripts/run_encoding_agent.py --tradeoffs-only
+
+# Harness agentico (Ollama + tools locais)
+python3 scripts/run_agent_harness.py "Compare encodings para dados contínuos com 5 features"
 ```
 
 ---
@@ -248,25 +311,51 @@ oc apply -f 00-namespace.yaml
 
 ---
 
+## Benchmarks (Iris, Breast Cancer, Wine)
+
+Suite reprodutível para **KTA**, ranking de encodings e **otimização ordem/seleção/peso** ([2512.02422](https://arxiv.org/abs/2512.02422)).
+
+```bash
+pip install -e ".[benchmark]"
+python scripts/run_benchmarks.py --quick          # Iris + sintético (~1 min)
+python scripts/run_benchmarks.py                  # suite completa
+python scripts/run_benchmarks.py --dataset iris_binary --json out.json
+pytest tests/test_benchmarks.py -q                # smoke CI
+```
+
+| Dataset | Origem | Uso |
+|---------|--------|-----|
+| `iris_binary` | UCI Iris (2 classes) | Rápido, CI |
+| `breast_cancer_top6` | Wisconsin BC, 6 features | Público, médio |
+| `wine_binary` | UCI Wine (2 classes) | 13 features |
+| `synthetic_order` | Gerado | Sensível a permutação de colunas |
+
+Detalhes: [`benchmarks/README.md`](benchmarks/README.md).  
+**Roteiro para apresentar oralmente:** [`benchmarks/PRESENTATION.md`](benchmarks/PRESENTATION.md).  
+**Hardware IBM (~10 min/mês):** [`benchmarks/HARDWARE.md`](benchmarks/HARDWARE.md) — `python scripts/run_hardware_benchmarks.py --preset week1_iris`.
+
+---
+
 ## Arquitetura
 
 ```
-Usuário (chat ou curl)
+Usuário (browser /chat, OpenClaw, curl, Kubeflow)
         │
-   OpenClaw (Node.js)          ← personalidade via SOUL.md + AGENTS.md
+   ┌────┴──── OpenClaw (opcional) ──── LLM + SOUL.md (Circuit / Quanta)
+   │              │
+   │              └──► POST /v1/tools/dispatch  ou  /v1/agent/chat
+   │
+   └──► GET /chat  ──► POST /v1/agent/chat  (UI web, personas)
         │
-   LLM (Ollama local           ← qwen2.5-coder:14b / mistral-small3.2:24b
-        ou vLLM no OpenShift)
+   LLM (Ollama / vLLM / Llama Stack)     ← AGENT_* env
         │
-        └──► POST /v1/recommend/explain
-                    │
-             quantum-encoding-agents (FastAPI)
-                    ├── infer_data_profile()
-                    ├── recommend_encoding()
-                    ├── detect_language()          ← PT-BR / EN automático
-                    ├── build_natural_explanation() ← cita DataProfile + métricas reais
-                    ├── generate_qiskit_code()      ← código copiável por encoding
-                    └── simulate_encoding_circuit() ← AerSimulator (CPU)
+             llama-qiskit-agents (FastAPI)
+                    ├── GET /v1/tools + POST /v1/tools/dispatch  (9 tools)
+                    ├── POST /v1/agent/chat                        (harness server-side)
+                    ├── POST /v1/recommend/explain                 (one-shot, sem LLM)
+                    ├── infer_data_profile() → recommend_encoding()
+                    ├── simulate_encoding_circuit() → compute_kernel() (K_{ij}, KTA)
+                    └── dispatch_tool()  ← fonte única quantum/*
 ```
 
 ---
@@ -287,23 +376,20 @@ quantum-encoding-agents/
 │   │   ├── encoding_ranking.py  # ranking formatado para relatório
 │   │   └── simulate.py          # AerSimulator orchestration
 │   ├── api/
-│   │   ├── app.py               # FastAPI — todos os endpoints
-│   │   └── schemas.py           # Pydantic models (HardwareProfileInput, KernelRequest, etc.)
+│   │   ├── app.py               # FastAPI — REST + /v1/tools + /v1/agent/chat
+│   │   ├── schemas.py           # Pydantic models
+│   │   └── static/chat.html     # UI web agentica
 │   └── agents/
-│       └── encoding_agent.py   # 6 tool functions para Llama Stack
-├── openclaw-openshift/
-│   ├── local/                  # Stack local (Docker Compose + Ollama)
-│   │   ├── docker-compose.yml
-│   │   ├── setup.sh
-│   │   └── config/agents/      # SOUL.md de cada agente
-│   ├── 04-configmap-openclaw.yaml
-│   ├── 05-configmap-agent-*.yaml
-│   ├── 10-deployment.yaml
-│   └── GUIA-INSTALACAO.md
-├── deploy/openshift/           # Manifests do microserviço (API)
-├── scripts/                    # CLI runners
+│       ├── tool_registry.py     # 9 tools + dispatch (fonte única)
+│       ├── harness.py           # ReAct loop (Ollama / Llama Stack)
+│       └── encoding_agent.py    # Re-exports retrocompatíveis
+├── examples/agents/             # OpenClaw, Ollama, HTTP — guia integração
+├── deploy/openshift/            # Manifests do microserviço (API)
+├── scripts/
+│   ├── run_agent_harness.py     # CLI agentico
+│   └── run_encoding_agent.py    # CLI pipeline quântico
 ├── Dockerfile
-└── DEMO.md                     # Guia de demonstração para conferências
+└── docker-compose.yml           # API + env AGENT_* para /chat
 ```
 
 ---
@@ -314,6 +400,10 @@ quantum-encoding-agents/
 |---|---|---|
 | `PORT` | `8080` | Porta da API |
 | `CORS_ORIGINS` | `*` | Origins CORS |
+| `AGENT_BACKEND` | `ollama` | Backend do `/v1/agent/chat` e UI `/chat` |
+| `AGENT_MODEL` | `qwen2.5-coder:14b` | Modelo LLM |
+| `OLLAMA_HOST` | `http://localhost:11434` | Host Ollama |
+| `OPENAI_API_BASE` | `{OLLAMA_HOST}/v1` | API OpenAI-compatible |
 | `LLAMA_STACK_CLIENT_API_KEY` | — | Opcional: auth Llama Stack |
 | `LLAMA_STACK_CLIENT_BASE_URL` | — | Opcional: URL servidor Llama Stack |
 

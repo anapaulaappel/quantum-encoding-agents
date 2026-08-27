@@ -43,6 +43,8 @@ def compute_kernel_matrix(
     data: list[list[float]] | np.ndarray,
     encoding_type: EncodingType,
     n_qubits: int | None = None,
+    *,
+    feature_bounds: "FeatureBounds | None" = None,
 ) -> np.ndarray:
     """
     Calcula a matriz de kernel N×N usando FidelityStatevectorKernel.
@@ -51,8 +53,6 @@ def compute_kernel_matrix(
     Complexidade: O(N² × profundidade_circuito).
     Prático para N ≤ 50 amostras em simulação clássica.
     """
-    from qiskit_machine_learning.kernels import FidelityStatevectorKernel
-
     x = np.asarray(data, dtype=float)
     if x.ndim == 1:
         x = x.reshape(1, -1)
@@ -73,7 +73,12 @@ def compute_kernel_matrix(
     statevectors: list[np.ndarray] = []
     for row in x:
         try:
-            qc = build_encoding_circuit(encoding_type, row, n_qubits=n_qubits)
+            qc = build_encoding_circuit(
+                encoding_type,
+                row,
+                n_qubits=n_qubits,
+                feature_bounds=feature_bounds,
+            )
             qc_clean = qc.copy()
             qc_clean.remove_final_measurements(inplace=True)
             transpiled = transpile(qc_clean, sim)
@@ -91,6 +96,53 @@ def compute_kernel_matrix(
             K[i, j] = float(abs(inner) ** 2)
 
     return K
+
+
+def compute_kta_by_encoding(
+    data: np.ndarray,
+    labels: list[int],
+    encoding_types: list[EncodingType] | None = None,
+    n_qubits: int | None = None,
+    *,
+    max_samples: int = 25,
+    feature_bounds: "FeatureBounds | None" = None,
+) -> dict[EncodingType, float]:
+    """
+    Calcula KTA para cada encoding (subamostra se N > max_samples).
+    Retorna apenas encodings que completaram sem erro.
+    """
+    if encoding_types is None:
+        encoding_types = list(EncodingType)
+
+    x = np.asarray(data, dtype=float)
+    if x.ndim == 1:
+        x = x.reshape(1, -1)
+    n = x.shape[0]
+    if n < 2 or len(labels) < 2 or len(set(labels)) < 2:
+        return {}
+
+    idx = np.arange(n)
+    if n > max_samples:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(n, size=max_samples, replace=False)
+    x_sub = x[idx]
+    labels_sub = [labels[int(i)] for i in idx]
+
+    scores: dict[EncodingType, float] = {}
+    for enc in encoding_types:
+        try:
+            K = compute_kernel_matrix(
+                x_sub,
+                enc,
+                n_qubits=n_qubits,
+                feature_bounds=feature_bounds,
+            )
+            stats = kernel_stats(K, labels_sub)
+            if "kta" in stats:
+                scores[enc] = stats["kta"]
+        except Exception:
+            continue
+    return scores
 
 
 def kernel_stats(K: np.ndarray, labels: list[int] | None = None) -> dict[str, float]:
@@ -242,6 +294,7 @@ def compute_kernel(
     labels: list[int] | None = None,
     n_qubits: int | None = None,
     lang: str = "pt",
+    feature_bounds: "FeatureBounds | None" = None,
 ) -> KernelResult:
     """
     Pipeline completo: calcula K, gera estatísticas e heatmap.
@@ -250,8 +303,18 @@ def compute_kernel(
     if x.ndim == 1:
         x = x.reshape(1, -1)
     n_samples, n_features = x.shape
+    bounds = feature_bounds
+    if bounds is None and n_samples >= 2:
+        from llama_qiskit_agents.quantum.preprocessing import FeatureBounds
 
-    K = compute_kernel_matrix(x, encoding_type, n_qubits=n_qubits)
+        bounds = FeatureBounds.fit(x)
+
+    K = compute_kernel_matrix(
+        x,
+        encoding_type,
+        n_qubits=n_qubits,
+        feature_bounds=bounds,
+    )
     stats = kernel_stats(K, labels)
     heatmap = render_kernel_heatmap(K, encoding_type.value, labels=labels, lang=lang)
 

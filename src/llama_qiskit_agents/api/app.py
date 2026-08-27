@@ -1,30 +1,32 @@
 """
-API HTTP (FastAPI) para o agente de encoding quântico.
-Roda localmente ou em container no OpenShift.
+API HTTP (FastAPI) — microserviço quântico + surface de tools para agentes.
+
+Pipeline determinístico (/v1/recommend/explain, /v1/compare, …) e camada agentica
+(/v1/tools, /v1/agent/chat) compartilham ``dispatch_tool`` em tool_registry.
 """
 
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from llama_qiskit_agents.agents.encoding_agent import (
-    analyze_data,
-    compare_embeddings_report,
-    explain_tradeoffs,
-    generate_qiskit_circuit,
-    simulate_circuit,
+from llama_qiskit_agents.agents.harness import build_backend, run_agent_turn
+from llama_qiskit_agents.agents.tool_registry import (
+    dispatch_tool,
+    get_tool_definitions,
+    list_tool_names,
+    openclaw_skill_markdown,
 )
 from llama_qiskit_agents.quantum.data_analysis import (
     infer_data_profile,
-    load_csv_from_string,
+    load_csv_from_string_with_labels,
+    feature_names_from_csv_text,
     recommend_encoding,
 )
-from llama_qiskit_agents.quantum.problem_context import scenario_guide_when_unspecified
 from llama_qiskit_agents.quantum.simulate import (
     compare_embeddings,
     format_comparison_report,
@@ -40,6 +42,8 @@ from llama_qiskit_agents.quantum.hardware_profile import HardwareProfile
 from llama_qiskit_agents.quantum.visualization import render_bloch_sphere, bloch_caption as make_bloch_caption
 from llama_qiskit_agents.quantum.kernel import compute_kernel
 from llama_qiskit_agents.api.schemas import (
+    AgentChatRequest,
+    AgentChatResponse,
     CompareRequest,
     CircuitRequest,
     DataInput,
@@ -52,6 +56,9 @@ from llama_qiskit_agents.api.schemas import (
     ProfileResponse,
     RecommendResponse,
     SimulateRequest,
+    ToolDispatchRequest,
+    ToolDispatchResponse,
+    ToolsListResponse,
     profile_to_response,
 )
 
@@ -59,8 +66,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(
     title="Llama Qiskit Agents API",
-    description="Análise de dados, recomendação de encoding quântico e simulação Qiskit.",
-    version="0.2.0",
+    description=(
+        "Microserviço quântico (encoding, kernel, KTA) e surface de tools para agentes "
+        "(OpenClaw, Ollama, Llama Stack, HTTP)."
+    ),
+    version="0.3.0",
 )
 
 _cors = os.environ.get("CORS_ORIGINS", "*").strip()
@@ -109,7 +119,78 @@ def root() -> dict:
         "docs": "/docs",
         "chat_ui": "/chat",
         "health": "/health",
+        "tools": "/v1/tools",
+        "tool_dispatch": "/v1/tools/dispatch",
+        "agent_chat": "/v1/agent/chat",
     }
+
+
+@app.get("/v1/tools", response_model=ToolsListResponse)
+def list_tools(
+    fmt: Literal["openai", "openclaw"] = Query(default="openai"),
+) -> ToolsListResponse:
+    """Schemas de ferramentas para function-calling (OpenAI, OpenClaw, MCP-like HTTP)."""
+    tools = get_tool_definitions(fmt)
+    return ToolsListResponse(format=fmt, count=len(tools), tools=tools)
+
+
+@app.get("/v1/tools/openclaw-skill.md", response_class=PlainTextResponse)
+def openclaw_skill_doc(
+    api_base: str = Query(default="http://llama-qiskit-agents:8080"),
+) -> str:
+    return openclaw_skill_markdown(api_base)
+
+
+@app.post("/v1/tools/dispatch", response_model=ToolDispatchResponse)
+def tools_dispatch(body: ToolDispatchRequest) -> ToolDispatchResponse:
+    """Executa uma ferramenta quântica — ponto de integração para OpenClaw skills e outros agentes."""
+    if body.name not in list_tool_names():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tool '{body.name}' não encontrada. Use GET /v1/tools.",
+        )
+    result = dispatch_tool(body.name, body.arguments)
+    return ToolDispatchResponse(name=body.name, result=result)
+
+
+@app.post("/v1/agent/chat", response_model=AgentChatResponse)
+def agent_chat(body: AgentChatRequest) -> AgentChatResponse:
+    """
+    Turno agentico server-side: LLM + tools locais (Ollama/vLLM/Llama Stack via env).
+
+    Variáveis: AGENT_BACKEND, AGENT_MODEL, OPENAI_API_BASE, OLLAMA_HOST, OPENAI_API_KEY.
+    Com ``csv_content``, o prompt inclui instrução para usar ``compare_csv_embeddings``.
+    """
+    persona = body.persona if body.persona in ("default", "expert", "mentor") else "default"
+    backend_kind = body.backend or os.environ.get("AGENT_BACKEND", "ollama")
+    backend = build_backend(backend_kind)  # type: ignore[arg-type]
+
+    user_message = body.message.strip()
+    if body.csv_content and body.csv_content.strip():
+        label_hint = (
+            f" label_column={body.label_column!r}."
+            if body.label_column
+            else " (auto-detect label column if present)."
+        )
+        user_message += (
+            "\n\n[CSV anexado pelo usuário — chame compare_csv_embeddings com csv_content "
+            f"e problem_description derivada da pergunta.{label_hint}]\n"
+            f"--- csv_content ---\n{body.csv_content.strip()[:120000]}\n--- fim csv ---"
+        )
+
+    turn = run_agent_turn(
+        user_message,
+        history=body.history,
+        persona=persona,  # type: ignore[arg-type]
+        backend=backend,
+        max_tool_rounds=body.max_tool_rounds,
+    )
+    return AgentChatResponse(
+        reply=turn.reply,
+        persona=persona,
+        tool_calls=turn.tool_calls,
+        backend=backend_kind,
+    )
 
 
 @app.post("/v1/analyze", response_model=ProfileResponse)
@@ -235,13 +316,16 @@ def recommend_explain(body: ExplainRequest) -> ExplainResponse:
 @app.post("/v1/compare", response_class=PlainTextResponse)
 def compare(body: CompareRequest) -> str:
     raw = _resolve_input(body)
-    return compare_embeddings_report(
-        raw,
-        n_qubits=body.n_qubits,
-        shots=body.shots,
-        task=body.task,
-        algorithm=body.algorithm,
-        problem_description=body.problem_description,
+    return dispatch_tool(
+        "compare_embeddings_report",
+        {
+            "data": raw,
+            "n_qubits": body.n_qubits,
+            "shots": body.shots,
+            "task": body.task,
+            "algorithm": body.algorithm,
+            "problem_description": body.problem_description,
+        },
     )
 
 
@@ -260,41 +344,62 @@ async def compare_csv(
     problem_description: Annotated[str | None, Form()] = None,
     shots: Annotated[int, Form()] = 1024,
     n_qubits: Annotated[str | None, Form()] = None,
+    label_column: Annotated[str | None, Form()] = None,
+    optimize_features: Annotated[bool, Form()] = False,
+    optimization_encoding: Annotated[str | None, Form()] = None,
 ) -> str:
     """
     Multipart: `file` + opcionalmente `problem_description` (texto livre: problema, tarefa, algoritmo).
-    Palavras-chave no texto são inferidas (classificação, QSVM, etc.).
+    Coluna de label: auto-detect (label/class/target/y ou última coluna categórica) ou `label_column`.
+    Com labels, o ranking usa KTA por encoding.
+    `optimize_features=true` (requer labels): busca ordem/seleção/peso de colunas por KTA [EncOpt25].
     """
     text = (await file.read()).decode("utf-8-sig")
     try:
-        arr = load_csv_from_string(text)
+        arr, labels = load_csv_from_string_with_labels(
+            text,
+            label_column=(label_column or "").strip() or None,
+        )
+        col_names = feature_names_from_csv_text(
+            text,
+            label_column=(label_column or "").strip() or None,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     n_q = _optional_int_form(n_qubits)
-    results, profile, recommended, reason, ctx = compare_embeddings(
+    opt_enc: EncodingType | None = None
+    if optimization_encoding and optimization_encoding.strip():
+        try:
+            opt_enc = EncodingType(optimization_encoding.strip())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    cr = compare_embeddings(
         arr,
         n_qubits=n_q,
         shots=max(1, shots),
         problem_description=(problem_description or "").strip() or None,
+        labels=labels,
+        optimize_features=optimize_features,
+        optimization_encoding=opt_enc,
+        feature_column_names=col_names,
     )
-    return format_comparison_report(results, profile, recommended, reason, ctx)
+    return format_comparison_report(cr)
 
 
 @app.get("/v1/tradeoffs", response_class=PlainTextResponse)
 def tradeoffs() -> str:
-    return explain_tradeoffs()
+    return dispatch_tool("explain_tradeoffs", {})
 
 
 @app.get("/v1/scenarios-guide", response_class=PlainTextResponse)
 def scenarios_guide() -> str:
-    """Guia: qual encoding tende a servir para classificação, kernel, clusterização, etc."""
-    return scenario_guide_when_unspecified()
+    return dispatch_tool("scenarios_guide", {})
 
 
 @app.post("/v1/kernel", response_model=KernelResponse)
 def kernel(body: KernelRequest) -> KernelResponse:
     """
-    Calcula a matriz de kernel quântico K[i,j] = |⟨φ(xᵢ)|φ(xⱼ)⟩|² para um dataset.
+    Calcula a matriz de kernel quântico K_{ij} = |⟨φ(xᵢ)|φ(xⱼ)⟩|² para um dataset.
 
     - Mínimo 2 amostras; recomendado ≤ 50 (custo O(N²)).
     - Retorna a matriz N×N, estatísticas (separability_hint, KTA se labels fornecidos)
@@ -348,27 +453,33 @@ def kernel(body: KernelRequest) -> KernelResponse:
 
 @app.post("/v1/circuit", response_class=PlainTextResponse)
 def circuit(body: CircuitRequest) -> str:
-    return generate_qiskit_circuit(
-        body.encoding_name,
-        body.data,
-        n_qubits=body.n_qubits,
+    return dispatch_tool(
+        "generate_qiskit_circuit",
+        {
+            "encoding_name": body.encoding_name,
+            "data": body.data,
+            "n_qubits": body.n_qubits,
+        },
     )
 
 
 @app.post("/v1/simulate", response_class=PlainTextResponse)
 def simulate(body: SimulateRequest) -> str:
-    return simulate_circuit(
-        body.encoding_name,
-        body.data,
-        n_qubits=body.n_qubits,
-        shots=body.shots,
+    return dispatch_tool(
+        "simulate_circuit",
+        {
+            "encoding_name": body.encoding_name,
+            "data": body.data,
+            "n_qubits": body.n_qubits,
+            "shots": body.shots,
+        },
     )
 
 
 @app.get("/v1/analyze/text", response_class=PlainTextResponse)
 def analyze_text_legacy(q: str) -> str:
     """Compatível com testes rápidos: GET ?q=descrição"""
-    return analyze_data(q)
+    return dispatch_tool("analyze_data", {"dataset_or_description": q})
 
 
 @app.get("/chat", include_in_schema=False)

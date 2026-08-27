@@ -10,6 +10,8 @@ from llama_qiskit_agents.quantum.data_analysis import (
     infer_data_profile,
     load_csv,
     load_csv_from_string,
+    load_csv_from_string_with_labels,
+    feature_names_from_csv_text,
     recommend_encoding,
     get_encoding_tradeoffs,
 )
@@ -36,12 +38,26 @@ from llama_qiskit_agents.quantum.visualization import (
 from llama_qiskit_agents.quantum.kernel import (
     compute_kernel,
     compute_kernel_matrix,
+    compute_kta_by_encoding,
     kernel_stats,
     render_kernel_heatmap,
     kernel_caption,
     KernelResult,
 )
+from llama_qiskit_agents.quantum.preprocessing import (
+    FeatureBounds,
+    PreprocessResult,
+    preprocess_for_encoding,
+)
+from llama_qiskit_agents.quantum.encoding_optimization import (
+    FeatureEncodingPlan,
+    FeatureOptimizationResult,
+    optimize_feature_encoding,
+    pick_encoding_for_optimization,
+    format_feature_optimization_section,
+)
 from llama_qiskit_agents.quantum.simulate import (
+    CompareEmbeddingsResult,
     SimulationResult,
     compare_embeddings,
     compare_embeddings_report,
@@ -62,6 +78,8 @@ __all__ = [
     "infer_data_profile",
     "load_csv",
     "load_csv_from_string",
+    "load_csv_from_string_with_labels",
+    "feature_names_from_csv_text",
     "recommend_encoding",
     "get_encoding_tradeoffs",
     # hardware profile
@@ -83,11 +101,21 @@ __all__ = [
     # kernel
     "compute_kernel",
     "compute_kernel_matrix",
+    "compute_kta_by_encoding",
     "kernel_stats",
     "render_kernel_heatmap",
     "kernel_caption",
     "KernelResult",
+    "FeatureBounds",
+    "PreprocessResult",
+    "preprocess_for_encoding",
+    "FeatureEncodingPlan",
+    "FeatureOptimizationResult",
+    "optimize_feature_encoding",
+    "pick_encoding_for_optimization",
+    "format_feature_optimization_section",
     # simulation
+    "CompareEmbeddingsResult",
     "SimulationResult",
     "compare_embeddings",
     "compare_embeddings_report",

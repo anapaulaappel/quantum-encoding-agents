@@ -1,0 +1,755 @@
+# PIPELINE DEFINITION
+# Name: quantum-encoding-analysis-agents
+# Description: Pipeline RHOAI com compare via /v1/tools/dispatch e resumo agentico (/v1/agent/chat). MLflow: ver RHOAI-AGENTS.md (não incluído nesta variante).
+# Inputs:
+#    agent_persona: str [Default: 'expert']
+#    algorithm: str [Default: '']
+#    api_url: str [Default: 'http://llama-qiskit-agents.openclaw.svc.cluster.local:8080']
+#    connectivity: str [Default: 'all-to-all']
+#    csv_content: str [Default: '0.31,0.72,0.55
+0.18,0.90,0.44
+0.62,0.33,0.77']
+#    gate_error_rate: float [Default: 0.0]
+#    label_column: str [Default: '']
+#    labels_csv: str [Default: '']
+#    lang: str [Default: 'pt']
+#    max_depth_budget: int [Default: 0.0]
+#    max_kernel_samples: int [Default: 20.0]
+#    max_tool_rounds: int [Default: 6.0]
+#    problem_description: str [Default: '']
+#    shots: int [Default: 512.0]
+#    task: str [Default: '']
+components:
+  comp-agent-summarize:
+    executorLabel: exec-agent-summarize
+    inputDefinitions:
+      parameters:
+        api_url:
+          parameterType: STRING
+        csv_content:
+          parameterType: STRING
+        label_column:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+        max_tool_rounds:
+          defaultValue: 6.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        persona:
+          defaultValue: expert
+          isOptional: true
+          parameterType: STRING
+        problem_description:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        agent_output:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-analyze-data:
+    executorLabel: exec-analyze-data
+    inputDefinitions:
+      parameters:
+        api_url:
+          parameterType: STRING
+        csv_content:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        profile_output:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-compare-csv-via-dispatch:
+    executorLabel: exec-compare-csv-via-dispatch
+    inputDefinitions:
+      parameters:
+        api_url:
+          parameterType: STRING
+        csv_content:
+          parameterType: STRING
+        label_column:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+        problem_description:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+        shots:
+          defaultValue: 512.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        comparison_output:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-compute-kernel:
+    executorLabel: exec-compute-kernel
+    inputDefinitions:
+      artifacts:
+        recommendation_input:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+      parameters:
+        api_url:
+          parameterType: STRING
+        csv_content:
+          parameterType: STRING
+        labels_csv:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+        lang:
+          defaultValue: pt
+          isOptional: true
+          parameterType: STRING
+        max_samples:
+          defaultValue: 20.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        kernel_output:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-emit-run-summary:
+    executorLabel: exec-emit-run-summary
+    inputDefinitions:
+      artifacts:
+        agent_input:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        comparison_input:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        kernel_input:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        recommendation_input:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        agent_reply_output:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        run_metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        run_summary_output:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-recommend-encoding:
+    executorLabel: exec-recommend-encoding
+    inputDefinitions:
+      artifacts:
+        profile_input:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+      parameters:
+        algorithm:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+        api_url:
+          parameterType: STRING
+        connectivity:
+          defaultValue: all-to-all
+          isOptional: true
+          parameterType: STRING
+        gate_error_rate:
+          defaultValue: 0.0
+          isOptional: true
+          parameterType: NUMBER_DOUBLE
+        lang:
+          defaultValue: pt
+          isOptional: true
+          parameterType: STRING
+        max_depth_budget:
+          defaultValue: 0.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        problem_description:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+        task:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        recommendation_output:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-agent-summarize:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - agent_summarize
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.31'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef agent_summarize(\n    api_url: str,\n    csv_content: str,\n\
+          \    agent_output: Output[Artifact],\n    problem_description: str = \"\"\
+          ,\n    persona: str = \"expert\",\n    label_column: str = \"\",\n    max_tool_rounds:\
+          \ int = 6,\n):\n    \"\"\"\n    Chama /v1/agent/chat com CSV anexado; salva\
+          \ reply + tool_calls como JSON.\n    \"\"\"\n    import json\n    import\
+          \ requests\n\n    message = problem_description.strip() or (\n        \"\
+          Analise o CSV anexado, compare encodings quando fizer sentido \"\n     \
+          \   \"e recomende a melhor estrat\xE9gia de encoding qu\xE2ntico com justificativa.\"\
+          \n    )\n\n    payload: dict = {\n        \"message\": message,\n      \
+          \  \"persona\": persona if persona in (\"default\", \"expert\", \"mentor\"\
+          ) else \"expert\",\n        \"csv_content\": csv_content,\n        \"max_tool_rounds\"\
+          : max_tool_rounds,\n    }\n    if label_column:\n        payload[\"label_column\"\
+          ] = label_column\n\n    response = requests.post(\n        f\"{api_url.rstrip('/')}/v1/agent/chat\"\
+          ,\n        json=payload,\n        timeout=900,\n    )\n    response.raise_for_status()\n\
+          \    data = response.json()\n\n    artifact = {\n        \"reply\": data.get(\"\
+          reply\", \"\"),\n        \"persona\": data.get(\"persona\"),\n        \"\
+          backend\": data.get(\"backend\"),\n        \"tool_calls\": data.get(\"tool_calls\"\
+          , []),\n        \"problem_description\": message,\n    }\n\n    with open(agent_output.path,\
+          \ \"w\") as f:\n        json.dump(artifact, f, indent=2, ensure_ascii=False)\n\
+          \n    print(f\"Agent ({data.get('persona')}) backend={data.get('backend')}\"\
+          )\n    print(f\"Tools: {[t.get('name') for t in data.get('tool_calls', [])]}\"\
+          )\n    print(data.get(\"reply\", \"\")[:2000])\n\n"
+        image: python:3.12-slim
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.2
+          memoryLimit: 0.536870912
+          memoryRequest: 0.268435456
+          resourceCpuLimit: '1'
+          resourceCpuRequest: 200m
+          resourceMemoryLimit: 512Mi
+          resourceMemoryRequest: 256Mi
+    exec-analyze-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - analyze_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.31'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef analyze_data(\n    api_url: str,\n    csv_content: str,\n   \
+          \ profile_output: Output[Artifact],\n):\n    \"\"\"\n    Etapa 1 do pipeline:\
+          \ POST /v1/analyze com o CSV e salva o perfil.\n    \"\"\"\n    import json\n\
+          \    import requests\n    import io\n    import csv as csvlib\n\n    # Converter\
+          \ CSV para lista de floats (primeira linha como amostra)\n    rows = []\n\
+          \    reader = csvlib.reader(io.StringIO(csv_content.strip()))\n    for row\
+          \ in reader:\n        vals = []\n        for cell in row:\n            try:\n\
+          \                vals.append(float(cell.strip()))\n            except (ValueError,\
+          \ AttributeError):\n                pass\n        if vals:\n           \
+          \ rows.append(vals)\n\n    if not rows:\n        raise ValueError(\"CSV\
+          \ n\xE3o cont\xE9m dados num\xE9ricos v\xE1lidos.\")\n\n    # POST /v1/analyze\
+          \ com a primeira linha como amostra\n    sample = rows[0]\n    payload =\
+          \ {\"data\": sample}\n    response = requests.post(f\"{api_url}/v1/analyze\"\
+          , json=payload, timeout=60)\n    response.raise_for_status()\n    profile\
+          \ = response.json()\n\n    # Adicionar metadados \xFAteis para pr\xF3ximas\
+          \ etapas\n    profile[\"_n_rows_csv\"] = len(rows)\n    profile[\"_sample_used\"\
+          ] = sample\n\n    with open(profile_output.path, \"w\") as f:\n        json.dump(profile,\
+          \ f, indent=2)\n\n    print(f\"Profile: {profile['n_features']} features,\
+          \ \"\n          f\"binary={profile['is_binary']}, continuous={profile['is_continuous']}\"\
+          )\n\n"
+        image: python:3.12-slim
+    exec-compare-csv-via-dispatch:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - compare_csv_via_dispatch
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.31'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef compare_csv_via_dispatch(\n    api_url: str,\n    csv_content:\
+          \ str,\n    comparison_output: Output[Artifact],\n    problem_description:\
+          \ str = \"\",\n    label_column: str = \"\",\n    shots: int = 512,\n):\n\
+          \    \"\"\"\n    Etapa: compare_csv_embeddings via /v1/tools/dispatch.\n\
+          \    Com labels no CSV, o relat\xF3rio inclui ranking por KTA.\n    \"\"\
+          \"\n    import requests\n\n    arguments: dict = {\n        \"csv_content\"\
+          : csv_content,\n        \"shots\": shots,\n    }\n    if problem_description:\n\
+          \        arguments[\"problem_description\"] = problem_description\n    if\
+          \ label_column:\n        arguments[\"label_column\"] = label_column\n\n\
+          \    response = requests.post(\n        f\"{api_url.rstrip('/')}/v1/tools/dispatch\"\
+          ,\n        json={\"name\": \"compare_csv_embeddings\", \"arguments\": arguments},\n\
+          \        timeout=600,\n    )\n    response.raise_for_status()\n    report\
+          \ = response.json()[\"result\"]\n\n    with open(comparison_output.path,\
+          \ \"w\") as f:\n        f.write(report)\n\n    preview = \"\\n\".join(report.splitlines()[:15])\n\
+          \    print(preview)\n    if len(report.splitlines()) > 15:\n        print(\"\
+          ...\")\n\n"
+        image: python:3.12-slim
+        resources:
+          cpuLimit: 2.0
+          cpuRequest: 0.5
+          memoryLimit: 2.147483648
+          memoryRequest: 0.536870912
+          resourceCpuLimit: '2'
+          resourceCpuRequest: 500m
+          resourceMemoryLimit: 2Gi
+          resourceMemoryRequest: 512Mi
+    exec-compute-kernel:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - compute_kernel
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.31'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef compute_kernel(\n    api_url: str,\n    csv_content: str,\n \
+          \   recommendation_input: Input[Artifact],\n    kernel_output: Output[Artifact],\n\
+          \    labels_csv: str = \"\",    # ex: \"0,0,1,1,0,1\" \u2014 r\xF3tulos\
+          \ separados por v\xEDrgula\n    max_samples: int = 20,   # limite para custo\
+          \ O(N\xB2) em simula\xE7\xE3o cl\xE1ssica\n    lang: str = \"pt\",\n):\n\
+          \    \"\"\"\n    Etapa 4 do pipeline (opcional): calcula K[i,j]=|\u27E8\u03C6\
+          (x\u1D62)|\u03C6(x\u2C7C)\u27E9|\xB2 para o dataset.\n    Usa o encoding\
+          \ recomendado pela etapa anterior.\n    \"\"\"\n    import json\n    import\
+          \ io\n    import csv as csvlib\n    import requests\n\n    with open(recommendation_input.path)\
+          \ as f:\n        rec = json.load(f)\n\n    encoding = rec.get(\"recommended_encoding\"\
+          , \"angle\")\n\n    # Carregar CSV e extrair amostras\n    rows: list[list[float]]\
+          \ = []\n    reader = csvlib.reader(io.StringIO(csv_content.strip()))\n \
+          \   for row in reader:\n        vals = []\n        for cell in row:\n  \
+          \          try:\n                vals.append(float(cell.strip()))\n    \
+          \        except (ValueError, AttributeError):\n                pass\n  \
+          \      if vals:\n            rows.append(vals)\n\n    if not rows:\n   \
+          \     raise ValueError(\"CSV n\xE3o cont\xE9m dados num\xE9ricos.\")\n\n\
+          \    # Limitar N para viabilidade computacional\n    rows = rows[:max_samples]\n\
+          \n    # Labels (opcional)\n    labels = None\n    if labels_csv.strip():\n\
+          \        try:\n            labels = [int(x.strip()) for x in labels_csv.split(\"\
+          ,\")]\n            labels = labels[:max_samples]  # alinhar com rows\n \
+          \       except ValueError:\n            labels = None\n\n    payload: dict\
+          \ = {\n        \"data\": rows,\n        \"encoding_name\": encoding,\n \
+          \       \"lang\": lang,\n    }\n    if labels:\n        payload[\"labels\"\
+          ] = labels\n\n    response = requests.post(\n        f\"{api_url}/v1/kernel\"\
+          ,\n        json=payload,\n        timeout=300,\n    )\n    response.raise_for_status()\n\
+          \    result = response.json()\n\n    with open(kernel_output.path, \"w\"\
+          ) as f:\n        json.dump(result, f, indent=2)\n\n    stats = result.get(\"\
+          stats\", {})\n    print(f\"Kernel {encoding}: {result['n_samples']}x{result['n_samples']}\"\
+          )\n    print(f\"  off_diagonal_mean: {stats.get('off_diagonal_mean', 'N/A')}\"\
+          )\n    print(f\"  separability_hint: {stats.get('separability_hint', 'N/A')}\"\
+          )\n    if \"kta\" in stats:\n        print(f\"  KTA: {stats['kta']}\")\n\
+          \    if result.get(\"heatmap_b64\"):\n        print(\"  Heatmap: gerado\"\
+          )\n\n"
+        image: python:3.12-slim
+    exec-emit-run-summary:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - emit_run_summary
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.31'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef emit_run_summary(\n    recommendation_input: Input[Artifact],\n\
+          \    comparison_input: Input[Artifact],\n    kernel_input: Input[Artifact],\n\
+          \    agent_input: Input[Artifact],\n    run_summary_output: Output[Artifact],\n\
+          \    agent_reply_output: Output[Artifact],\n    run_metrics: Output[Metrics],\n\
+          ):\n    \"\"\"\n    Agrega recomenda\xE7\xE3o, compara\xE7\xE3o, kernel\
+          \ e (opcional) resumo agentico em um artefato.\n    Persiste agent_reply.txt\
+          \ como Output[Artifact] para o Kubeflow Pipelines guardar o ficheiro.\n\
+          \    \"\"\"\n    import json\n\n    with open(recommendation_input.path)\
+          \ as f:\n        rec = json.load(f)\n\n    with open(comparison_input.path)\
+          \ as f:\n        comparison_report = f.read()\n\n    with open(kernel_input.path)\
+          \ as f:\n        kernel_data = json.load(f)\n\n    with open(agent_input.path)\
+          \ as f:\n        agent_data = json.load(f)\n\n    profile = rec.get(\"_profile\"\
+          , {})\n    summary = {\n        \"recommended_encoding\": rec.get(\"recommended_encoding\"\
+          ),\n        \"task_interpreted\": rec.get(\"task_interpreted\"),\n     \
+          \   \"circuit_depth\": rec.get(\"circuit_depth\"),\n        \"circuit_qubits\"\
+          : rec.get(\"circuit_qubits\"),\n        \"n_features\": profile.get(\"n_features\"\
+          ),\n        \"kernel_stats\": kernel_data.get(\"stats\"),\n        \"agent_tool_calls\"\
+          : [t.get(\"name\") for t in agent_data.get(\"tool_calls\", [])],\n     \
+          \   \"comparison_report_preview\": comparison_report[:4000],\n    }\n\n\
+          \    with open(run_summary_output.path, \"w\") as f:\n        json.dump(summary,\
+          \ f, indent=2, ensure_ascii=False)\n\n    run_metrics.log_metric(\"n_features\"\
+          , profile.get(\"n_features\", 0))\n    run_metrics.log_metric(\"circuit_depth\"\
+          , rec.get(\"circuit_depth\") or 0)\n    run_metrics.log_metric(\"circuit_qubits\"\
+          , rec.get(\"circuit_qubits\") or 0)\n    if kernel_data.get(\"stats\", {}).get(\"\
+          kta\") is not None:\n        run_metrics.log_metric(\"kta\", kernel_data[\"\
+          stats\"][\"kta\"])\n\n    with open(agent_reply_output.path, \"w\") as f:\n\
+          \        f.write(agent_data.get(\"reply\") or \"\")\n\n    print(json.dumps(summary,\
+          \ indent=2))\n\n"
+        image: python:3.12-slim
+    exec-recommend-encoding:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - recommend_encoding
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.31'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef recommend_encoding(\n    api_url: str,\n    profile_input: Input[Artifact],\n\
+          \    recommendation_output: Output[Artifact],\n    task: str = \"\",\n \
+          \   algorithm: str = \"\",\n    problem_description: str = \"\",\n    gate_error_rate:\
+          \ float = 0.0,\n    connectivity: str = \"all-to-all\",\n    max_depth_budget:\
+          \ int = 0,\n    lang: str = \"pt\",\n):\n    \"\"\"\n    Etapa 2 do pipeline:\
+          \ POST /v1/recommend/explain com perfil + contexto QML.\n    Salva a recomenda\xE7\
+          \xE3o completa (encoding, explica\xE7\xE3o, c\xF3digo Qiskit, m\xE9tricas).\n\
+          \    \"\"\"\n    import json\n    import requests\n\n    with open(profile_input.path)\
+          \ as f:\n        profile = json.load(f)\n\n    sample = profile.get(\"_sample_used\"\
+          , [0.1, 0.2, 0.3])\n\n    payload: dict = {\n        \"data\": sample,\n\
+          \        \"lang\": lang,\n        \"include_bloch\": True,   # captura esfera\
+          \ de Bloch quando \u22646 qubits\n    }\n    if task:\n        payload[\"\
+          task\"] = task\n    if algorithm:\n        payload[\"algorithm\"] = algorithm\n\
+          \    if problem_description:\n        payload[\"problem_description\"] =\
+          \ problem_description\n\n    # Hardware profile NISQ-aware (apenas se gate_error_rate\
+          \ foi informado)\n    if gate_error_rate > 0:\n        hw: dict = {\"connectivity\"\
+          : connectivity}\n        hw[\"gate_error_rate\"] = gate_error_rate\n   \
+          \     if max_depth_budget > 0:\n            hw[\"max_depth_budget\"] = max_depth_budget\n\
+          \        payload[\"hardware_profile\"] = hw\n\n    response = requests.post(\n\
+          \        f\"{api_url}/v1/recommend/explain\",\n        json=payload,\n \
+          \       timeout=120,\n    )\n    response.raise_for_status()\n    result\
+          \ = response.json()\n\n    # Adicionar metadados do profile\n    result[\"\
+          _profile\"] = profile\n    result[\"_input_sample\"] = sample\n\n    with\
+          \ open(recommendation_output.path, \"w\") as f:\n        json.dump(result,\
+          \ f, indent=2)\n\n    print(f\"Recomendado: {result['recommended_encoding']}\"\
+          )\n    print(f\"Qubits: {result.get('circuit_qubits')}, \"\n          f\"\
+          Depth: {result.get('circuit_depth')}\")\n    print(f\"HW constraints applied:\
+          \ {result.get('hardware_constraints_applied')}\")\n    if result.get(\"\
+          bloch_sphere_b64\"):\n        print(\"Bloch sphere: gerado\")\n\n"
+        image: python:3.12-slim
+pipelineInfo:
+  description: "Pipeline RHOAI com compare via /v1/tools/dispatch e resumo agentico\
+    \ (/v1/agent/chat). MLflow: ver RHOAI-AGENTS.md (n\xE3o inclu\xEDdo nesta variante)."
+  name: quantum-encoding-analysis-agents
+root:
+  dag:
+    tasks:
+      agent-summarize:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-agent-summarize
+        inputs:
+          parameters:
+            api_url:
+              componentInputParameter: api_url
+            csv_content:
+              componentInputParameter: csv_content
+            label_column:
+              componentInputParameter: label_column
+            max_tool_rounds:
+              componentInputParameter: max_tool_rounds
+            persona:
+              componentInputParameter: agent_persona
+            problem_description:
+              componentInputParameter: problem_description
+        taskInfo:
+          name: 3. Resumo agentico (/v1/agent/chat)
+      analyze-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-analyze-data
+        inputs:
+          parameters:
+            api_url:
+              componentInputParameter: api_url
+            csv_content:
+              componentInputParameter: csv_content
+        taskInfo:
+          name: 1. Analisar perfil do dado
+      compare-csv-via-dispatch:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-compare-csv-via-dispatch
+        inputs:
+          parameters:
+            api_url:
+              componentInputParameter: api_url
+            csv_content:
+              componentInputParameter: csv_content
+            label_column:
+              componentInputParameter: label_column
+            problem_description:
+              componentInputParameter: problem_description
+            shots:
+              componentInputParameter: shots
+        taskInfo:
+          name: 4. Comparar encodings (dispatch + KTA)
+      compute-kernel:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-compute-kernel
+        dependentTasks:
+        - recommend-encoding
+        inputs:
+          artifacts:
+            recommendation_input:
+              taskOutputArtifact:
+                outputArtifactKey: recommendation_output
+                producerTask: recommend-encoding
+          parameters:
+            api_url:
+              componentInputParameter: api_url
+            csv_content:
+              componentInputParameter: csv_content
+            labels_csv:
+              componentInputParameter: labels_csv
+            lang:
+              componentInputParameter: lang
+            max_samples:
+              componentInputParameter: max_kernel_samples
+        taskInfo:
+          name: "5. Kernel qu\xE2ntico K_{ij} + KTA"
+      emit-run-summary:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-emit-run-summary
+        dependentTasks:
+        - agent-summarize
+        - compare-csv-via-dispatch
+        - compute-kernel
+        - recommend-encoding
+        inputs:
+          artifacts:
+            agent_input:
+              taskOutputArtifact:
+                outputArtifactKey: agent_output
+                producerTask: agent-summarize
+            comparison_input:
+              taskOutputArtifact:
+                outputArtifactKey: comparison_output
+                producerTask: compare-csv-via-dispatch
+            kernel_input:
+              taskOutputArtifact:
+                outputArtifactKey: kernel_output
+                producerTask: compute-kernel
+            recommendation_input:
+              taskOutputArtifact:
+                outputArtifactKey: recommendation_output
+                producerTask: recommend-encoding
+        taskInfo:
+          name: 6. Consolidar artefatos (sem MLflow)
+      recommend-encoding:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-recommend-encoding
+        dependentTasks:
+        - analyze-data
+        inputs:
+          artifacts:
+            profile_input:
+              taskOutputArtifact:
+                outputArtifactKey: profile_output
+                producerTask: analyze-data
+          parameters:
+            algorithm:
+              componentInputParameter: algorithm
+            api_url:
+              componentInputParameter: api_url
+            connectivity:
+              componentInputParameter: connectivity
+            gate_error_rate:
+              componentInputParameter: gate_error_rate
+            lang:
+              componentInputParameter: lang
+            max_depth_budget:
+              componentInputParameter: max_depth_budget
+            problem_description:
+              componentInputParameter: problem_description
+            task:
+              componentInputParameter: task
+        taskInfo:
+          name: 2. Recomendar encoding (+ Bloch)
+  inputDefinitions:
+    parameters:
+      agent_persona:
+        defaultValue: expert
+        isOptional: true
+        parameterType: STRING
+      algorithm:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      api_url:
+        defaultValue: http://llama-qiskit-agents.openclaw.svc.cluster.local:8080
+        isOptional: true
+        parameterType: STRING
+      connectivity:
+        defaultValue: all-to-all
+        isOptional: true
+        parameterType: STRING
+      csv_content:
+        defaultValue: '0.31,0.72,0.55
+
+          0.18,0.90,0.44
+
+          0.62,0.33,0.77'
+        isOptional: true
+        parameterType: STRING
+      gate_error_rate:
+        defaultValue: 0.0
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      label_column:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      labels_csv:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      lang:
+        defaultValue: pt
+        isOptional: true
+        parameterType: STRING
+      max_depth_budget:
+        defaultValue: 0.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      max_kernel_samples:
+        defaultValue: 20.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      max_tool_rounds:
+        defaultValue: 6.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      problem_description:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      shots:
+        defaultValue: 512.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      task:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.17.0

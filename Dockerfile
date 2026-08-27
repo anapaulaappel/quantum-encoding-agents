@@ -1,4 +1,4 @@
-# Imagem para OpenShift / testes locais (API + UI em /chat)
+# Imagem para OpenShift / testes locais (API + UI agentica em /chat)
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \

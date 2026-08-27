@@ -14,7 +14,7 @@ Pacote Python que conecta **Llama Stack** (LLMs com function-calling) ao **Qiski
 4. Simula via `AerSimulator` (CPU, sem hardware real)
 5. Produz relatório comparativo das 7 estratégias
 
-Exposto via **FastAPI** (`/v1/…`) e **UI web** (`/chat`).
+Exposto via **FastAPI** (`/v1/…`), **UI web agentica** (`/chat` → `/v1/agent/chat`) e tools HTTP (`/v1/tools/dispatch`).
 
 ---
 
@@ -24,12 +24,14 @@ Exposto via **FastAPI** (`/v1/…`) e **UI web** (`/chat`).
 llama-qiskit-agents/
 ├── src/llama_qiskit_agents/
 │   ├── agents/
-│   │   ├── client.py          # LlamaStackClient factory + chat_completion helper
-│   │   └── encoding_agent.py  # 6 tool functions + tool defs JSON + dispatch_tool
+│   │   ├── tool_registry.py   # 9 tools + schemas + dispatch_tool (fonte única)
+│   │   ├── encoding_agent.py  # Re-exports retrocompatíveis
+│   │   ├── harness.py         # ReAct loop (Ollama / Llama Stack / OpenAI-compatible)
+│   │   └── client.py          # LlamaStackClient factory + chat_completion helper
 │   ├── api/
 │   │   ├── app.py             # FastAPI: todos os endpoints
 │   │   ├── schemas.py         # Pydantic models request/response
-│   │   └── static/chat.html   # UI web (dark, form → /v1/compare/csv)
+│   │   └── static/chat.html   # UI web → /v1/agent/chat (+ modo direto /v1/compare/csv)
 │   └── quantum/
 │       ├── encodings.py        # EncodingType enum + 7 circuit builders
 │       ├── data_analysis.py    # CSV load, DataProfile, recommend_encoding
@@ -42,9 +44,11 @@ llama-qiskit-agents/
 │       ├── simulate.py         # AerSimulator orchestration + format_comparison_report
 │       └── circuits.py         # Bell + simple circuit (demo apenas)
 ├── scripts/
-│   ├── run_encoding_agent.py  # CLI principal (sem Llama Stack)
+│   ├── run_encoding_agent.py  # CLI pipeline quântico (sem LLM)
+│   ├── run_agent_harness.py   # CLI agentico (LLM + tools)
 │   ├── run_api.py             # Inicia uvicorn
 │   └── run_quantum_example.py # Demo Qiskit puro
+├── examples/agents/           # OpenClaw, Ollama, HTTP — guia de integração
 ├── demo_script.py             # Demo Llama Stack RAG (independente do quantum)
 ├── config.yaml                # Referência provider Ollama (não carregado pelo app)
 ├── deploy/openshift/          # deployment.yaml, service.yaml, route.yaml
@@ -131,28 +135,35 @@ CSV / array / texto
 | `POST /v1/recommend/explain` | **Principal** — recomendação + explicação PT/EN + código Qiskit + Bloch sphere |
 | `POST /v1/compare` | Ranking completo (`CompareRequest` JSON) → plain text |
 | `POST /v1/compare/csv` | Upload CSV multipart → relatório plain text |
-| `POST /v1/kernel` | Matriz de kernel quântico K[i,j] + KTA + heatmap PNG |
+| `POST /v1/kernel` | Matriz K_{ij} + KTA + heatmap PNG |
+| `GET /v1/tools` | Schemas OpenAI / OpenClaw |
+| `POST /v1/tools/dispatch` | Executa tool (integração agentes) |
+| `POST /v1/agent/chat` | Turno LLM + tools (env AGENT_*) |
 | `GET /v1/tradeoffs` | Trade-offs de todos os encodings |
 | `GET /v1/scenarios-guide` | Guia de cenários QML |
 | `POST /v1/circuit` | Gera circuito (`CircuitRequest` JSON) → diagrama texto |
 | `POST /v1/simulate` | Simula circuito (`SimulateRequest` JSON) → contagens |
 | `GET /v1/analyze/text?q=` | Análise rápida por query string (legacy) |
-| `GET /chat` | Serve `chat.html` |
+| `GET /chat` | UI web: chat agentico (default) ou compare CSV direto |
 
 ---
 
-## Tools do Agente LLM (encoding_agent.py)
+## Tools do agente (`tool_registry.py`)
 
-6 funções expostas como tools OpenAI-style:
+9 tools — fonte única para REST, harness e OpenClaw:
 
-1. `analyze_data(dataset_or_description)` → perfil formatado
-2. `recommend_embedding_strategy(dataset_or_description, task?, algorithm?, problem_description?)` → recomendação
-3. `generate_qiskit_circuit(encoding_name, data, n_qubits?)` → diagrama do circuito
-4. `simulate_circuit(encoding_name, data, n_qubits?, shots=1024)` → top-10 outcomes
-5. `compare_embeddings_report(data, n_qubits?, shots?, task?, algorithm?, problem_description?)` → relatório completo
-6. `explain_tradeoffs()` → texto de trade-offs
+1. `analyze_data` — perfil do dado
+2. `recommend_embedding_strategy` — recomendação (+ hardware_profile opcional)
+3. `generate_qiskit_circuit` — diagrama ASCII
+4. `simulate_circuit` — contagens Aer
+5. `compare_embeddings_report` — ranking 7 encodings
+6. `compare_csv_embeddings` — CSV texto + KTA se labels
+7. `compute_quantum_kernel` — K_{ij} + stats + KTA
+8. `explain_tradeoffs`
+9. `scenarios_guide`
 
-Roteador: `dispatch_tool(name, arguments)` → despacha para a função certa.
+Roteador: `dispatch_tool(name, arguments)`. Harness: `agents/harness.py` + `scripts/run_agent_harness.py`.
+Integração: `examples/agents/README.md`.
 
 ---
 
@@ -165,6 +176,10 @@ Roteador: `dispatch_tool(name, arguments)` → despacha para a função certa.
 | `PORT` | `8080` | Porta uvicorn |
 | `CORS_ORIGINS` | `*` | Origins CORS (`,` separados ou `*`) |
 | `UVICORN_RELOAD` | — | `1`/`true`/`yes` = hot reload |
+| `AGENT_BACKEND` | `ollama` | `ollama` \| `llama_stack` \| `remote` |
+| `AGENT_MODEL` | `qwen2.5-coder:14b` | Modelo LLM |
+| `OPENAI_API_BASE` | `{OLLAMA_HOST}/v1` | API OpenAI-compatible |
+| `OLLAMA_HOST` | `http://localhost:11434` | Host Ollama |
 
 ---
 
@@ -185,6 +200,10 @@ python scripts/run_encoding_agent.py --tradeoffs-only
 
 # Docker
 docker compose up --build
+# UI: http://localhost:8080/chat
+
+# Harness agentico (CLI)
+python scripts/run_agent_harness.py --persona expert "Qual encoding para QSVM?"
 
 # Demo Qiskit puro
 python scripts/run_quantum_example.py
@@ -194,7 +213,7 @@ python scripts/run_quantum_example.py
 
 ## Decisões de Design Notáveis
 
-- **Llama Stack é opcional** — todo o pipeline quantum funciona sem servidor LLM
+- **Llama Stack é opcional** — pipeline quantum e modo Direto da UI funcionam sem LLM; modo Agente em `/chat` requer `AGENT_*` + Ollama/vLLM
 - **AerSimulator apenas** — sem hardware quântico real; `build-essential` no Docker para compilar extensões nativas
 - **Falhas silenciosas** — em `compare_embeddings()`, encodings que falham são pulados (`except Exception: continue`)
 - **Relatório plain text** — `PlainTextResponse`; fácil de exibir em terminal, UI e contexto LLM

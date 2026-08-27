@@ -104,13 +104,15 @@ def iqp_encoding(
     data: np.ndarray,
     n_qubits: int | None = None,
     n_layers: int = 1,
+    pairwise: str = "all",
     name: str = "iqp",
 ) -> QuantumCircuit:
     """
-    IQP (Instantaneous Quantum Polynomial) encoding: camadas de H + Rz diagonal
-    com termos lineares x[i]^2 e cruzados x[i]*x[j] entre pares de qubits.
-    Base teórica forte para kernels quânticos — separável em teoria de complexidade
-    do angle encoding e do custom_feature_map. (Havlíček et al., Nature 2019)
+    IQP (Instantaneous Quantum Polynomial) / Hamiltoniano ZZ restrito (Havlíček et al., 2019).
+
+    Camadas H + Rz(x[i]^2) diagonal + Rzz(x[i]*x[j]) entre pares.
+    `pairwise='all'`: todos os pares (ZZ feature map completo).
+    `pairwise='adjacent'`: só pares adjacentes (menor profundidade, topologias lineares).
     """
     x = np.asarray(data, dtype=float).flatten()
     if n_qubits is None:
@@ -121,22 +123,25 @@ def iqp_encoding(
     else:
         x = x[:n_qubits]
 
+    mode = pairwise.strip().lower()
+    if mode not in ("all", "adjacent"):
+        raise ValueError("pairwise deve ser 'all' ou 'adjacent'")
+
     qc = QuantumCircuit(n_qubits, name=name)
     for _ in range(n_layers):
-        # Camada H: coloca todos em superposição
         for i in range(n_qubits):
             qc.h(i)
-        # Termos lineares: Rz(x[i]^2) — diagonal, sem dois-qubit gates
         for i in range(n_qubits):
             qc.rz(x[i] ** 2, i)
-        # Termos cruzados: Rzz(x[i]*x[j]) entre pares adjacentes
-        # Implementado como CX + Rz + CX (decomposição de Rzz)
-        for i in range(n_qubits - 1):
-            angle = x[i] * x[i + 1]
-            qc.cx(i, i + 1)
-            qc.rz(angle, i + 1)
-            qc.cx(i, i + 1)
-        # Segunda camada H: completa o bloco IQP
+        if mode == "adjacent":
+            pairs = [(i, i + 1) for i in range(n_qubits - 1)]
+        else:
+            pairs = [(i, j) for i in range(n_qubits) for j in range(i + 1, n_qubits)]
+        for i, j in pairs:
+            angle = x[i] * x[j]
+            qc.cx(i, j)
+            qc.rz(angle, j)
+            qc.cx(i, j)
         for i in range(n_qubits):
             qc.h(i)
     return qc
@@ -228,12 +233,21 @@ def build_encoding_circuit(
     encoding_type: EncodingType,
     data: np.ndarray,
     n_qubits: int | None = None,
+    *,
+    feature_bounds: "FeatureBounds | None" = None,
+    apply_preprocessing: bool = True,
     **kwargs: Any,
 ) -> QuantumCircuit:
     """
     Constrói o circuito Qiskit para o tipo de encoding escolhido.
+    Por padrão aplica pré-processamento (normalização / min-max para ângulos).
     """
+    from llama_qiskit_agents.quantum.preprocessing import preprocess_for_encoding
+
     data = np.asarray(data)
+    if apply_preprocessing:
+        pp = preprocess_for_encoding(data, encoding_type, feature_bounds=feature_bounds)
+        data = pp.data
     if n_qubits is None and encoding_type == EncodingType.AMPLITUDE:
         n_qubits = max(1, int(np.ceil(np.log2(max(1, data.size)))))
     elif n_qubits is None and encoding_type == EncodingType.DENSE_ANGLE:

@@ -1,0 +1,32 @@
+# Exemplo: variáveis de ambiente para /v1/agent/chat no Deployment OpenShift
+# Copie o bloco env: para deploy/openshift/deployment.yaml (ou Secret + envFrom)
+#
+# Nomes lidos por /v1/agent/chat e harness.build_backend:
+#   AGENT_BACKEND, AGENT_MODEL, OPENAI_API_BASE, OPENAI_API_KEY, OLLAMA_HOST
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llama-qiskit-agents-agent-env
+  labels:
+    app: llama-qiskit-agents
+data:
+  # ollama | openai_compatible | llama_stack | remote
+  AGENT_BACKEND: "openai_compatible"
+  # URL base incluindo /v1 — ajuste para o Service do Model Serving no cluster
+  OPENAI_API_BASE: "http://vllm-model-serving.my-project.svc.cluster.local:8000/v1"
+  AGENT_MODEL: "meta-llama/Llama-3.1-8B-Instruct"
+  # vLLM local geralmente não exige chave real
+  OPENAI_API_KEY: "not-used"
+
+---
+# Uso no Deployment (trecho):
+#
+# spec:
+#   template:
+#     spec:
+#       containers:
+#         - name: api
+#           envFrom:
+#             - configMapRef:
+#                 name: llama-qiskit-agents-agent-env

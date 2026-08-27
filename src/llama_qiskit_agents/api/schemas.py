@@ -148,7 +148,7 @@ class KernelRequest(BaseModel):
     """
     Entrada para POST /v1/kernel — matriz de kernel quântico.
 
-    Aceita múltiplas amostras (N×F) para calcular K[i,j] = |⟨φ(xᵢ)|φ(xⱼ)⟩|².
+    Aceita múltiplas amostras (N×F) para calcular K_{ij} = |⟨φ(xᵢ)|φ(xⱼ)⟩|².
     Recomendado: N ≤ 50 amostras (custo O(N²) em simulação clássica).
     """
 
@@ -179,7 +179,7 @@ class KernelResponse(BaseModel):
     n_samples: int
     n_features: int
     kernel_matrix: list[list[float]] = Field(
-        description="Matriz K N×N de floats [0,1]. K[i][j] = |⟨φ(xᵢ)|φ(xⱼ)⟩|²"
+        description="Matriz K N×N de floats [0,1]. K_{ij} = |⟨φ(xᵢ)|φ(xⱼ)⟩|²"
     )
     stats: dict[str, float] = Field(
         description="diagonal_mean, off_diagonal_mean, off_diagonal_std, min, max, "
@@ -195,6 +195,51 @@ class KernelResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     service: str
+
+
+class ToolsListResponse(BaseModel):
+    format: str = Field(description="openai | openclaw")
+    count: int
+    tools: list[dict]
+
+
+class ToolDispatchRequest(BaseModel):
+    name: str = Field(description="Nome da ferramenta (ex.: recommend_embedding_strategy)")
+    arguments: dict = Field(default_factory=dict)
+
+
+class ToolDispatchResponse(BaseModel):
+    name: str
+    result: str
+
+
+class AgentChatRequest(BaseModel):
+    message: str
+    history: list[dict] | None = Field(
+        default=None,
+        description="Histórico OpenAI-style (role/content) sem system.",
+    )
+    persona: str = Field(default="default", description="default | expert | mentor")
+    max_tool_rounds: int = Field(default=8, ge=1, le=20)
+    backend: str | None = Field(
+        default=None,
+        description="ollama | openai_compatible | llama_stack | remote (default: env AGENT_BACKEND)",
+    )
+    csv_content: str | None = Field(
+        default=None,
+        description="Conteúdo CSV (texto). O agente pode chamar compare_csv_embeddings.",
+    )
+    label_column: str | None = Field(
+        default=None,
+        description="Coluna de label no CSV (opcional; auto-detect se omitido).",
+    )
+
+
+class AgentChatResponse(BaseModel):
+    reply: str
+    persona: str
+    tool_calls: list[dict] = Field(default_factory=list)
+    backend: str
 
 
 class ErrorResponse(BaseModel):

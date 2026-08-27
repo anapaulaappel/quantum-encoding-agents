@@ -24,6 +24,19 @@ from llama_qiskit_agents.quantum.encodings import (
     EncodingType,
     build_encoding_circuit,
 )
+from llama_qiskit_agents.quantum.encoding_optimization import (
+    FeatureOptimizationResult,
+    format_feature_optimization_section,
+    optimize_feature_encoding,
+    pick_encoding_for_optimization,
+)
+from llama_qiskit_agents.quantum.kernel import compute_kta_by_encoding
+from llama_qiskit_agents.quantum.preprocessing import (
+    FeatureBounds,
+    format_preprocess_section,
+    preprocess_for_encoding,
+)
+from llama_qiskit_agents.quantum.simulability import format_simulability_section
 from llama_qiskit_agents.quantum.problem_context import ProblemContext
 
 
@@ -37,8 +50,24 @@ class SimulationResult:
     num_qubits: int
     counts: dict[str, int]
     shots: int
-    # Statevector puro antes da medição (apenas quando save_statevector=True)
     statevector: np.ndarray | None = field(default=None, repr=False)
+
+
+@dataclass
+class CompareEmbeddingsResult:
+    """Saída agregada de compare_embeddings."""
+
+    results: list[SimulationResult]
+    profile: DataProfile
+    recommended: EncodingType
+    reason: str
+    context: ProblemContext
+    kta_by_encoding: dict[EncodingType, float] | None = None
+    labels: list[int] | None = None
+    feature_bounds: FeatureBounds | None = None
+    sample_row: np.ndarray | None = None
+    feature_optimization: FeatureOptimizationResult | None = None
+    feature_column_names: list[str] | None = None
 
 
 def simulate_encoding_circuit(
@@ -62,7 +91,6 @@ def simulate_encoding_circuit(
     job = sim.run(transpiled, shots=shots)
     counts = dict(job.result().get_counts())
 
-    # Capturar statevector separadamente se solicitado
     sv = None
     if save_statevector:
         from llama_qiskit_agents.quantum.visualization import simulate_statevector
@@ -88,75 +116,199 @@ def compare_embeddings(
     task: str | None = None,
     algorithm: str | None = None,
     problem_description: str | None = None,
-) -> tuple[list[SimulationResult], DataProfile, EncodingType, str, ProblemContext]:
+    labels: list[int] | None = None,
+    optimize_features: bool = False,
+    optimization_encoding: EncodingType | None = None,
+    feature_column_names: list[str] | None = None,
+) -> CompareEmbeddingsResult:
     """
     Compara múltiplos encodings no mesmo dado: simula cada um e retorna
     resultados, perfil do dado, encoding recomendado e justificativa.
-    Aceita CSV (path): carrega, analisa e usa a primeira linha como amostra para simulação.
+    Com labels (≥2 classes), calcula KTA por encoding para reordenar o ranking.
     """
     if encoding_types is None:
         encoding_types = list(EncodingType)
-    # CSV: carregar e usar primeira linha como amostra para simulação
+
+    full_x: np.ndarray | None = None
+
     if isinstance(data, (str, Path)):
         p = Path(data) if isinstance(data, str) else data
         if str(p).lower().endswith(".csv") and p.exists():
-            x = load_csv(p)
-            profile = infer_data_profile(x)
-            data_arr = x[0] if x.ndim > 1 else x.flatten()
+            full_x = load_csv(p)
+            profile = infer_data_profile(full_x)
+            data_arr = full_x[0] if full_x.ndim > 1 else full_x.flatten()
         else:
             profile = infer_data_profile(data)
             data_arr = np.array([0.1, 0.2, 0.3])
     else:
-        x = np.asarray(data)
-        profile = infer_data_profile(x)
-        if x.ndim > 1 and x.shape[0] > 0:
-            data_arr = x[0]
+        full_x = np.asarray(data)
+        profile = infer_data_profile(full_x)
+        if full_x.ndim > 1 and full_x.shape[0] > 0:
+            data_arr = full_x[0]
         else:
-            data_arr = x.flatten() if hasattr(x, "__len__") else np.array([0.0])
+            data_arr = full_x.flatten() if hasattr(full_x, "__len__") else np.array([0.0])
+
     if len(data_arr) == 0:
         data_arr = np.array([0.1, 0.2, 0.3])
+
+    bounds: FeatureBounds | None = None
+    if full_x is not None and full_x.ndim == 2 and full_x.shape[0] >= 2:
+        bounds = FeatureBounds.fit(full_x)
+
     recommended, reason, ctx = recommend_encoding(
         profile,
         task=task,
         algorithm=algorithm,
         problem_description=problem_description,
     )
+
+    feature_optimization: FeatureOptimizationResult | None = None
+    if (
+        optimize_features
+        and labels is not None
+        and full_x is not None
+        and full_x.ndim == 2
+        and full_x.shape[0] >= 2
+        and len(labels) == full_x.shape[0]
+        and len(set(labels)) >= 2
+    ):
+        enc_for_opt = pick_encoding_for_optimization(
+            full_x,
+            labels,
+            preferred=optimization_encoding,
+            n_qubits=n_qubits,
+        )
+        feature_optimization = optimize_feature_encoding(
+            full_x,
+            labels,
+            enc_for_opt,
+            n_qubits=n_qubits,
+            column_names=feature_column_names,
+        )
+        if feature_optimization is not None:
+            full_x = feature_optimization.plan.apply(full_x)
+            profile = infer_data_profile(full_x)
+            bounds = FeatureBounds.fit(full_x) if full_x.shape[0] >= 2 else bounds
+            data_arr = full_x[0]
+
     results: list[SimulationResult] = []
     for enc in encoding_types:
         try:
-            qc = build_encoding_circuit(enc, data_arr, n_qubits=n_qubits)
+            qc = build_encoding_circuit(
+                enc,
+                data_arr,
+                n_qubits=n_qubits,
+                feature_bounds=bounds,
+            )
             res = simulate_encoding_circuit(qc, enc, shots=shots)
             results.append(res)
         except Exception:
             continue
-    return results, profile, recommended, reason, ctx
+
+    kta_scores: dict[EncodingType, float] | None = None
+    if (
+        labels is not None
+        and full_x is not None
+        and full_x.ndim == 2
+        and full_x.shape[0] >= 2
+        and len(labels) == full_x.shape[0]
+        and len(set(labels)) >= 2
+    ):
+        kta_scores = compute_kta_by_encoding(
+            full_x,
+            labels,
+            encoding_types=[r.encoding_type for r in results],
+            n_qubits=n_qubits,
+            feature_bounds=bounds,
+        )
+        if not kta_scores:
+            kta_scores = None
+
+    return CompareEmbeddingsResult(
+        results=results,
+        profile=profile,
+        recommended=recommended,
+        reason=reason,
+        context=ctx,
+        kta_by_encoding=kta_scores,
+        labels=labels,
+        feature_bounds=bounds,
+        sample_row=np.asarray(data_arr, dtype=float),
+        feature_optimization=feature_optimization,
+        feature_column_names=feature_column_names,
+    )
 
 
 def format_comparison_report(
-    results: list[SimulationResult],
-    profile: DataProfile,
-    recommended: EncodingType,
-    reason: str,
-    problem_context: ProblemContext | None = None,
+    compare_result: CompareEmbeddingsResult,
 ) -> str:
-    """Formata um relatório em texto para o agente/usuário."""
+    """Formata relatório de comparação."""
+    cr = compare_result
     lines = [
         "=== Perfil do dado ===",
-        f"  Amostras: {profile.n_samples}, Features: {profile.n_features}",
-        f"  Binário: {profile.is_binary}, Categórico: {profile.is_categorical}, Contínuo: {profile.is_continuous}",
-        f"  Descrição: {profile.description}",
-        "",
-        "=== Recomendação detalhada (dado + problema QML) ===",
-        f"  Encoding sugerido: {recommended.value}",
-        f"  {reason}",
+        f"  Amostras: {cr.profile.n_samples}, Features: {cr.profile.n_features}",
+        f"  Binário: {cr.profile.is_binary}, Categórico: {cr.profile.is_categorical}, "
+        f"Contínuo: {cr.profile.is_continuous}",
+        f"  Descrição: {cr.profile.description}",
         "",
     ]
+
+    if cr.labels is not None:
+        n_cls = len(set(cr.labels))
+        lines.extend([
+            "=== Labels detectados ===",
+            f"  {len(cr.labels)} amostras com rótulo ({n_cls} classes distintas). "
+            "Ranking abaixo usa KTA (Kernel-Target Alignment) quando disponível.",
+            "",
+        ])
+
+    if cr.feature_optimization is not None:
+        n_orig = len(cr.feature_column_names) if cr.feature_column_names else cr.profile.n_features
+        lines.extend(
+            format_feature_optimization_section(
+                cr.feature_optimization,
+                column_names=cr.feature_column_names,
+                n_original_features=n_orig,
+            )
+        )
+
+    if cr.sample_row is not None and cr.results:
+        lines.append("=== Pré-processamento matemático (amostra simulada) ===")
+        for res in cr.results:
+            pp = preprocess_for_encoding(
+                cr.sample_row,
+                res.encoding_type,
+                feature_bounds=cr.feature_bounds,
+            )
+            lines.extend(format_preprocess_section(res.encoding_type, pp))
+        lines.append("")
+
+    lines.extend([
+        "=== Recomendação detalhada (dado + problema QML) ===",
+        f"  Encoding sugerido (heurística): {cr.recommended.value}",
+        f"  {cr.reason}",
+        "",
+    ])
+
+    if cr.kta_by_encoding:
+        best_kta = max(cr.kta_by_encoding.items(), key=lambda kv: kv[1])
+        lines.extend([
+            f"  Melhor KTA observado: {best_kta[0].value} (KTA={best_kta[1]:.4f})",
+            "",
+        ])
+
     lines.extend(
         format_encoding_ranking_section(
-            profile, recommended, reason, results, problem_context
+            cr.profile,
+            cr.recommended,
+            cr.reason,
+            cr.results,
+            cr.context,
+            kta_by_encoding=cr.kta_by_encoding,
         )
     )
-    lines.extend(format_measurements_note_section(results))
+    lines.extend(format_measurements_note_section(cr.results))
+    lines.extend(format_simulability_section(cr.results, iqp_pairwise="all"))
     lines.append("=== Trade-offs por tipo de encoding ===")
     for enc, text in get_encoding_tradeoffs().items():
         lines.append(f"  {enc.value}: {text}")
@@ -171,10 +323,14 @@ def compare_embeddings_report(
     task: str | None = None,
     algorithm: str | None = None,
     problem_description: str | None = None,
+    labels: list[int] | None = None,
+    optimize_features: bool = False,
+    optimization_encoding: EncodingType | None = None,
+    feature_column_names: list[str] | None = None,
 ) -> str:
     """
     Compara todos os encodings no dado: simula cada um e retorna relatório
-    com perfil, recomendação, resultados e trade-offs. Aceita path de CSV.
+    com perfil, recomendação, KTA (se labels), pré-processamento e trade-offs.
     """
     if isinstance(data, (str, Path)):
         data_input: np.ndarray | list[float] | str | Path = data
@@ -182,15 +338,19 @@ def compare_embeddings_report(
         data_input = np.asarray(data)
         if data_input.size == 0:
             data_input = np.array([0.1, 0.2, 0.3])
-    results, profile, recommended, reason, ctx = compare_embeddings(
+    cr = compare_embeddings(
         data_input,
         n_qubits=n_qubits,
         shots=shots,
         task=task,
         algorithm=algorithm,
         problem_description=problem_description,
+        labels=labels,
+        optimize_features=optimize_features,
+        optimization_encoding=optimization_encoding,
+        feature_column_names=feature_column_names,
     )
-    return format_comparison_report(results, profile, recommended, reason, ctx)
+    return format_comparison_report(cr)
 
 
 def explain_tradeoffs() -> str:
