@@ -46,7 +46,10 @@ class DataInput(BaseModel):
     """Entrada: descrição em texto ou lista numérica (uma amostra ou features)."""
 
     description: str | None = Field(default=None, description="Texto descrevendo o dataset")
-    data: list[float] | None = Field(default=None, description="Lista de números (uma linha de features)")
+    data: list[float] | list[list[float]] | None = Field(
+        default=None,
+        description="Uma linha de features ou matriz N×F (N≥32 habilita D2/FD-ASE).",
+    )
     task: str | None = Field(
         default=None,
         description="Tarefa QML: classification | clustering | encoding | kernel | variational",
@@ -55,6 +58,13 @@ class DataInput(BaseModel):
     problem_description: str | None = Field(
         default=None,
         description="Texto livre sobre o problema (classificação, kernel, etc.)",
+    )
+    apply_fractal_budget: bool = Field(
+        default=True,
+        description=(
+            "Se True, recorta colunas FD-ASE e limita angle/IQP a q*. "
+            "Se False, recomenda nas E colunas originais; D2 e a seleção FD-ASE continuam no perfil."
+        ),
     )
     hardware_profile: HardwareProfileInput | None = Field(
         default=None,
@@ -88,6 +98,12 @@ class ProfileResponse(BaseModel):
     is_continuous: bool
     has_negative: bool
     description: str
+    intrinsic_dimension: float | None = None
+    embedding_dimension: int | None = None
+    qubit_budget: int | None = None
+    selected_columns: list[int] | None = None
+    selected_feature_names: list[str] | None = None
+    fractal_selection_applied: bool = False
 
 
 class RecommendResponse(BaseModel):

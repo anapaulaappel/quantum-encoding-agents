@@ -16,6 +16,7 @@ from llama_qiskit_agents.quantum.data_analysis import (
     load_csv_from_string_with_labels,
     feature_names_from_csv_text,
     recommend_encoding,
+    effective_n_features,
 )
 from llama_qiskit_agents.quantum.encodings import EncodingType, build_encoding_circuit
 from llama_qiskit_agents.quantum.hardware_profile import HardwareProfile
@@ -80,20 +81,41 @@ def _hardware_from_dict(raw: dict[str, Any] | None) -> HardwareProfile | None:
 # ---------------------------------------------------------------------------
 
 
+def _format_profile_line(profile) -> str:
+    line = (
+        f"Perfil: n_samples={profile.n_samples}, n_features={profile.n_features}, "
+        f"binário={profile.is_binary}, categórico={profile.is_categorical}, "
+        f"contínuo={profile.is_continuous}, has_negative={profile.has_negative}"
+    )
+    if profile.intrinsic_dimension is not None:
+        cols = profile.selected_columns or []
+        names = profile.selected_feature_names
+        col_txt = ", ".join(names) if names else ", ".join(str(c) for c in cols)
+        line += (
+            f", E={profile.embedding_dimension}, D2={profile.intrinsic_dimension:.4f}, "
+            f"qubit_budget={profile.qubit_budget}, n_used={effective_n_features(profile)}, "
+            f"selected_columns=[{col_txt}], "
+            f"fractal_selection_applied={profile.fractal_selection_applied}"
+        )
+    else:
+        line += (
+            f", intrinsic_dimension={profile.intrinsic_dimension}, "
+            f"qubit_budget={profile.qubit_budget}, selected_columns={profile.selected_columns}"
+        )
+    return f"{line}, descrição={profile.description}"
+
+
 def analyze_data(
     dataset_or_description: str | list[float] | list[list[float]] | None = None,
     csv_path: str | None = None,
+    apply_fractal_budget: bool = True,
 ) -> str:
+    """Analisa dataset ou descrição e devolve DataProfile, incluindo D2/q*/FD-ASE quando houver matriz."""
     data = csv_path if csv_path else dataset_or_description
     if data is None:
         return "Nenhum dado fornecido. Passe dataset_or_description ou csv_path."
-    profile = infer_data_profile(data)
-    return (
-        f"Perfil: n_samples={profile.n_samples}, n_features={profile.n_features}, "
-        f"binário={profile.is_binary}, categórico={profile.is_categorical}, "
-        f"contínuo={profile.is_continuous}, has_negative={profile.has_negative}, "
-        f"descrição={profile.description}"
-    )
+    profile = infer_data_profile(data, apply_fractal_budget=apply_fractal_budget)
+    return _format_profile_line(profile)
 
 
 def recommend_embedding_strategy(
@@ -103,11 +125,13 @@ def recommend_embedding_strategy(
     algorithm: str | None = None,
     problem_description: str | None = None,
     hardware_profile: dict[str, Any] | None = None,
+    apply_fractal_budget: bool = True,
 ) -> str:
+    """Recomenda encoding; com matriz 2D aplica FD-ASE antes (D2, q*, colunas)."""
     data = csv_path if csv_path else dataset_or_description
     if data is None:
         return "Nenhum dado fornecido. Passe dataset_or_description ou csv_path."
-    profile = infer_data_profile(data)
+    profile = infer_data_profile(data, apply_fractal_budget=apply_fractal_budget)
     hw = _hardware_from_dict(hardware_profile)
     encoding, reason, ctx = recommend_encoding(
         profile,
@@ -123,7 +147,8 @@ def recommend_embedding_strategy(
             extra += f", algoritmo={ctx.algorithm}"
         extra += "."
     hw_note = " Hardware profile aplicado." if hw else ""
-    return f"Recomendação: {encoding.value}.{extra} Motivo: {reason}{hw_note}"
+    fractal = _format_profile_line(profile)
+    return f"Recomendação: {encoding.value}.{extra} Motivo: {reason}{hw_note}\n{fractal}"
 
 
 def generate_qiskit_circuit(
@@ -167,6 +192,7 @@ def compare_embeddings_report_tool(
     task: str | None = None,
     algorithm: str | None = None,
     problem_description: str | None = None,
+    apply_fractal_budget: bool = True,
 ) -> str:
     parsed = _parse_numeric_data(data)
     return compare_embeddings_report(
@@ -176,6 +202,7 @@ def compare_embeddings_report_tool(
         task=task,
         algorithm=algorithm,
         problem_description=problem_description,
+        apply_fractal_budget=apply_fractal_budget,
     )
 
 
@@ -187,6 +214,7 @@ def compare_csv_embeddings(
     label_column: str | None = None,
     optimize_features: bool = False,
     optimization_encoding: str | None = None,
+    apply_fractal_budget: bool = True,
 ) -> str:
     if not csv_content or not csv_content.strip():
         return "csv_content vazio."
@@ -216,6 +244,7 @@ def compare_csv_embeddings(
         optimize_features=optimize_features,
         optimization_encoding=opt_enc,
         feature_column_names=col_names,
+        apply_fractal_budget=apply_fractal_budget,
     )
     return format_comparison_report(cr)
 
@@ -278,12 +307,17 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "analyze_data",
-            "description": "Analisa dataset ou descrição textual e retorna DataProfile (dimensão, tipos).",
+            "description": "Analisa dataset ou descrição textual e retorna DataProfile (dimensão, tipos, D2/q*/FD-ASE).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "dataset_or_description": {"type": "string"},
                     "csv_path": {"type": "string", "description": "Caminho local CSV (CLI); preferir csv_content na API."},
+                    "apply_fractal_budget": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Se True, recorta FD-ASE antes de recomendar. Se False, usa todas as colunas mas ainda devolve D2 e a seleção.",
+                    },
                 },
             },
         },
@@ -292,7 +326,7 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "recommend_embedding_strategy",
-            "description": "Recomenda encoding quântico com base no perfil, tarefa QML e hardware opcional.",
+            "description": "Recomenda encoding quântico com base no perfil, tarefa QML, hardware opcional e orçamento fractal (D2/q*).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -300,6 +334,11 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "task": {"type": "string", "enum": _TASK_ENUM},
                     "algorithm": {"type": "string"},
                     "problem_description": {"type": "string"},
+                    "apply_fractal_budget": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Se True, recorta FD-ASE antes da recomendação. Se False, recomenda na largura cheia; D2/seleção continuam no perfil.",
+                    },
                     "hardware_profile": {
                         "type": "object",
                         "properties": {
@@ -362,6 +401,11 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "task": {"type": "string"},
                     "algorithm": {"type": "string"},
                     "problem_description": {"type": "string"},
+                    "apply_fractal_budget": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Se True, aplica o recorte FD-ASE antes do ranking KTA. D2/seleção são estimados mesmo se False.",
+                    },
                 },
                 "required": ["data"],
             },
@@ -391,6 +435,11 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "optimization_encoding": {
                         "type": "string",
                         "description": "Encoding fixo para otimização; default = melhor KTA baseline.",
+                    },
+                    "apply_fractal_budget": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Se True, recorta FD-ASE antes do KTA guloso. D2/seleção continuam no relatório se False.",
                     },
                 },
                 "required": ["csv_content"],

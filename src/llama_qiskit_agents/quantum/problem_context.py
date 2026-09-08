@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 
-from llama_qiskit_agents.quantum.data_analysis import DataProfile
+from llama_qiskit_agents.quantum.data_analysis import DataProfile, effective_n_features
 from llama_qiskit_agents.quantum.encodings import EncodingType
 
 
@@ -254,13 +255,34 @@ def refine_recommendation(
                     segments.append(f"Nota sobre {sub}: {blurb}")
                 break
 
+    n_used = effective_n_features(profile)
+    if profile.qubit_budget is not None and profile.fractal_selection_applied:
+        qubit_est = {
+            EncodingType.AMPLITUDE: max(1, math.ceil(math.log2(max(1, n_used)))),
+            EncodingType.DENSE_ANGLE: max(1, math.ceil(n_used / 2)),
+        }.get(enc, n_used)
+        packed = max(1, math.ceil(n_used / 2))
+        if enc in (EncodingType.ANGLE, EncodingType.IQP) and qubit_est > profile.qubit_budget:
+            enc = EncodingType.DENSE_ANGLE
+            segments.append(
+                f"Ajuste fractal: angle/IQP pedem ~{n_used} qubits mas q*={profile.qubit_budget} "
+                f"(D2≈{profile.intrinsic_dimension}). Substituído por dense_angle ({packed} qubits)."
+            )
+        elif qubit_est > profile.qubit_budget and packed <= profile.qubit_budget:
+            original_enc = enc
+            enc = EncodingType.DENSE_ANGLE
+            segments.append(
+                f"Ajuste fractal: {original_enc.value} estimava {qubit_est} qubits acima de q*={profile.qubit_budget}. "
+                f"Dense-angle usa {packed} qubits."
+            )
+
     # ── Filtro de hardware ────────────────────────────────────────────────
     if hardware_profile is not None:
         hw = hardware_profile
 
         # Encodings profundos penalizados acima do limiar p* de gate error
         _DEEP_ENCODINGS = {EncodingType.AMPLITUDE, EncodingType.CUSTOM_FEATURE_MAP, EncodingType.IQP}
-        _SHALLOW_FALLBACK = EncodingType.DENSE_ANGLE if profile.n_features > 4 else EncodingType.ANGLE
+        _SHALLOW_FALLBACK = EncodingType.DENSE_ANGLE if effective_n_features(profile) > 4 else EncodingType.ANGLE
 
         if hw.is_nisq_constrained() and enc in _DEEP_ENCODINGS:
             original = enc
@@ -280,16 +302,17 @@ def refine_recommendation(
             )
 
         # Aviso de budget de profundidade (não muda o encoding — informa apenas)
+        n_used = effective_n_features(profile)
         if hw.max_depth_budget is not None:
             _DEPTH_ESTIMATES = {
                 EncodingType.ANGLE: 1,
                 EncodingType.DENSE_ANGLE: 2,
                 EncodingType.BASIS: 1,
-                EncodingType.DATA_REUPLOADING: 4 * profile.n_features,
-                EncodingType.IQP: 3 * profile.n_features
-                + 3 * max(0, profile.n_features * (profile.n_features - 1) // 2),
-                EncodingType.CUSTOM_FEATURE_MAP: 3 * profile.n_features,
-                EncodingType.AMPLITUDE: 4 * profile.n_features,
+                EncodingType.DATA_REUPLOADING: 4 * n_used,
+                EncodingType.IQP: 3 * n_used
+                + 3 * max(0, n_used * (n_used - 1) // 2),
+                EncodingType.CUSTOM_FEATURE_MAP: 3 * n_used,
+                EncodingType.AMPLITUDE: 4 * n_used,
             }
             est = _DEPTH_ESTIMATES.get(enc, 0)
             if est > hw.max_depth_budget:
@@ -299,19 +322,29 @@ def refine_recommendation(
                     f"e da topologia do hardware ({hw.connectivity})."
                 )
 
-        # Aviso de qubits insuficientes
+        n_used = effective_n_features(profile)
+        _QUBIT_ESTIMATES = {
+            EncodingType.AMPLITUDE: max(1, math.ceil(math.log2(max(1, n_used)))),
+            EncodingType.DENSE_ANGLE: max(1, math.ceil(n_used / 2)),
+        }
+        est_qubits = _QUBIT_ESTIMATES.get(enc, n_used)
+
         if hw.max_qubits is not None:
-            import math
-            _QUBIT_ESTIMATES = {
-                EncodingType.AMPLITUDE: max(1, math.ceil(math.log2(max(1, profile.n_features)))),
-                EncodingType.DENSE_ANGLE: max(1, math.ceil(profile.n_features / 2)),
-            }
-            est_qubits = _QUBIT_ESTIMATES.get(enc, profile.n_features)
             if est_qubits > hw.max_qubits:
-                segments.append(
-                    f"Aviso de qubits: {enc.value} requer ~{est_qubits} qubits para {profile.n_features} features — "
-                    f"acima do limite de {hw.max_qubits} qubits do hardware informado."
-                )
+                packed = max(1, math.ceil(n_used / 2))
+                if enc != EncodingType.DENSE_ANGLE and packed <= hw.max_qubits:
+                    enc = EncodingType.DENSE_ANGLE
+                    est_qubits = packed
+                    segments.append(
+                        f"Ajuste de hardware: {n_used} features não cabem em {hw.max_qubits} qubits "
+                        f"com encoding 1:1 — dense_angle usa {est_qubits} qubits."
+                    )
+                else:
+                    segments.append(
+                        f"Aviso de qubits: {enc.value} requer ~{est_qubits} qubits para {n_used} features "
+                        f"(E original={profile.n_features}) — acima do limite de {hw.max_qubits} "
+                        f"qubits do hardware informado."
+                    )
 
     if not context.has_explicit_info():
         segments.append("")

@@ -14,6 +14,12 @@ from llama_qiskit_agents.quantum.data_analysis import (
     feature_names_from_csv_text,
     recommend_encoding,
     get_encoding_tradeoffs,
+    effective_n_features,
+)
+from llama_qiskit_agents.quantum.fractal import (
+    FDASE,
+    FractalBudget,
+    estimate_fractal_budget,
 )
 from llama_qiskit_agents.quantum.hardware_profile import (
     HardwareProfile,
@@ -82,6 +88,10 @@ __all__ = [
     "feature_names_from_csv_text",
     "recommend_encoding",
     "get_encoding_tradeoffs",
+    "effective_n_features",
+    "FDASE",
+    "FractalBudget",
+    "estimate_fractal_budget",
     # hardware profile
     "HardwareProfile",
     "NISQ_GATE_ERROR_THRESHOLD",

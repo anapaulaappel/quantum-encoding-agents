@@ -9,7 +9,11 @@ Responsabilidades:
 
 from __future__ import annotations
 
-from llama_qiskit_agents.quantum.data_analysis import DataProfile
+from llama_qiskit_agents.quantum.data_analysis import (
+    DataProfile,
+    effective_n_features,
+    _fractal_reason_suffix,
+)
 from llama_qiskit_agents.quantum.encodings import EncodingType
 from llama_qiskit_agents.quantum.problem_context import MLTask, ProblemContext
 from llama_qiskit_agents.quantum.simulate import SimulationResult
@@ -117,14 +121,17 @@ def _describe_data_pt(p: DataProfile) -> str:
     )
     neg = " com valores negativos presentes" if p.has_negative else ""
     if p.n_samples > 0:
-        return (
+        text = (
             f"Seu dataset tem {p.n_samples} amostra{'s' if p.n_samples != 1 else ''} "
             f"e {p.n_features} feature{'s' if p.n_features != 1 else ''}, "
             f"com valores {tipo}{neg}."
         )
-    return (
-        f"A descrição indica dados {tipo}{neg}."
-    )
+    else:
+        text = f"A descrição indica dados {tipo}{neg}."
+    fractal = _fractal_reason_suffix(p, lang="pt").strip()
+    if fractal:
+        text = f"{text} {fractal}"
+    return text
 
 
 def _describe_data_en(p: DataProfile) -> str:
@@ -136,12 +143,17 @@ def _describe_data_en(p: DataProfile) -> str:
     )
     neg = " with negative values present" if p.has_negative else ""
     if p.n_samples > 0:
-        return (
+        text = (
             f"Your dataset has {p.n_samples} sample{'s' if p.n_samples != 1 else ''} "
             f"and {p.n_features} feature{'s' if p.n_features != 1 else ''}, "
             f"with {tipo} values{neg}."
         )
-    return f"The description indicates {tipo} data{neg}."
+    else:
+        text = f"The description indicates {tipo} data{neg}."
+    fractal = _fractal_reason_suffix(p, lang="en").strip()
+    if fractal:
+        text = f"{text} {fractal}"
+    return text
 
 
 # --- Justificativa da recomendação ---
@@ -260,7 +272,7 @@ def _explain_recommendation_pt(
     if context.task != MLTask.UNKNOWN:
         task_notes = {
             MLTask.CLASSIFICATION: (
-                f" Para classificação com {_fmt_features(profile.n_features, 'pt')}, "
+                f" Para classificação com {_fmt_features(effective_n_features(profile), 'pt')}, "
                 "o encoding precisa ser expressivo o suficiente para separar as classes no espaço quântico."
             ),
             MLTask.KERNEL_METHOD: (
@@ -296,7 +308,7 @@ def _explain_recommendation_en(
     if context.task != MLTask.UNKNOWN:
         task_notes = {
             MLTask.CLASSIFICATION: (
-                f" For classification with {_fmt_features(profile.n_features, 'en')}, "
+                f" For classification with {_fmt_features(effective_n_features(profile), 'en')}, "
                 "the encoding needs to be expressive enough to separate classes in quantum space."
             ),
             MLTask.KERNEL_METHOD: (
@@ -377,6 +389,25 @@ def _depth_comment_en(depth: int) -> str:
 
 
 def _qubit_comment_pt(n_qubits: int, profile: DataProfile) -> str:
+    n_used = effective_n_features(profile)
+    if (
+        profile.fractal_selection_applied
+        and profile.qubit_budget is not None
+        and n_used < profile.n_features
+    ):
+        return (
+            f"Circuito usa {n_qubits} qubit(s) no recorte FD-ASE ({n_used} colunas, "
+            f"E={profile.n_features}, q*={profile.qubit_budget})."
+        )
+    if (
+        not profile.fractal_selection_applied
+        and profile.selected_columns
+        and profile.qubit_budget is not None
+    ):
+        return (
+            f"Circuito usa a largura cheia ({profile.n_features} features, {n_qubits} qubit(s)). "
+            f"FD-ASE sugeriria {len(profile.selected_columns)} colunas (q*={profile.qubit_budget})."
+        )
     if profile.n_features > 0 and n_qubits < profile.n_features:
         savings = profile.n_features - n_qubits
         return (
@@ -389,6 +420,25 @@ def _qubit_comment_pt(n_qubits: int, profile: DataProfile) -> str:
 
 
 def _qubit_comment_en(n_qubits: int, profile: DataProfile) -> str:
+    n_used = effective_n_features(profile)
+    if (
+        profile.fractal_selection_applied
+        and profile.qubit_budget is not None
+        and n_used < profile.n_features
+    ):
+        return (
+            f"Circuit uses {n_qubits} qubit(s) on the FD-ASE subset ({n_used} columns, "
+            f"E={profile.n_features}, q*={profile.qubit_budget})."
+        )
+    if (
+        not profile.fractal_selection_applied
+        and profile.selected_columns
+        and profile.qubit_budget is not None
+    ):
+        return (
+            f"Circuit uses the full width ({profile.n_features} features, {n_qubits} qubit(s)). "
+            f"FD-ASE would keep {len(profile.selected_columns)} columns (q*={profile.qubit_budget})."
+        )
     if profile.n_features > 0 and n_qubits < profile.n_features:
         savings = profile.n_features - n_qubits
         return (
@@ -576,7 +626,33 @@ def generate_qiskit_code(
     fn = generators.get(encoding)
     if fn is None:
         return f"# Encoding '{encoding.value}' não suportado para geração de código."
-    return fn(data_sample, profile, n_qubits, lang)
+    code = fn(data_sample, profile, n_qubits, lang)
+    if profile.selected_columns:
+        if profile.fractal_selection_applied:
+            if lang == "en":
+                note = (
+                    f"# FD-ASE kept columns {profile.selected_columns} "
+                    f"(E={profile.n_features}, D2={profile.intrinsic_dimension}, q*={profile.qubit_budget})\n"
+                )
+            else:
+                note = (
+                    f"# FD-ASE manteve colunas {profile.selected_columns} "
+                    f"(E={profile.n_features}, D2={profile.intrinsic_dimension}, q*={profile.qubit_budget})\n"
+                )
+        elif lang == "en":
+            note = (
+                f"# Advisory: FD-ASE would keep {profile.selected_columns} "
+                f"(E={profile.n_features}, D2={profile.intrinsic_dimension}, q*={profile.qubit_budget}); "
+                "circuit uses all original columns\n"
+            )
+        else:
+            note = (
+                f"# Aviso: FD-ASE sugeriria {profile.selected_columns} "
+                f"(E={profile.n_features}, D2={profile.intrinsic_dimension}, q*={profile.qubit_budget}); "
+                "o circuito usa todas as colunas originais\n"
+            )
+        return note + code
+    return code
 
 
 def _header(encoding: EncodingType, lang: str) -> str:

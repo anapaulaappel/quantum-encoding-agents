@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from typing import Annotated, Literal
 
+import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -27,6 +28,7 @@ from llama_qiskit_agents.quantum.data_analysis import (
     feature_names_from_csv_text,
     recommend_encoding,
 )
+from llama_qiskit_agents.quantum.fractal import apply_column_selection_row
 from llama_qiskit_agents.quantum.simulate import (
     compare_embeddings,
     format_comparison_report,
@@ -85,7 +87,7 @@ app.add_middleware(
 )
 
 
-def _resolve_input(body: DataInput) -> str | list[float]:
+def _resolve_input(body: DataInput) -> str | list[float] | list[list[float]]:
     if body.data is not None and len(body.data) > 0:
         return body.data
     if body.description:
@@ -196,14 +198,14 @@ def agent_chat(body: AgentChatRequest) -> AgentChatResponse:
 @app.post("/v1/analyze", response_model=ProfileResponse)
 def analyze(body: DataInput) -> ProfileResponse:
     raw = _resolve_input(body)
-    profile = infer_data_profile(raw)
+    profile = infer_data_profile(raw, apply_fractal_budget=body.apply_fractal_budget)
     return profile_to_response(profile)
 
 
 @app.post("/v1/recommend", response_model=RecommendResponse)
 def recommend(body: DataInput) -> RecommendResponse:
     raw = _resolve_input(body)
-    profile = infer_data_profile(raw)
+    profile = infer_data_profile(raw, apply_fractal_budget=body.apply_fractal_budget)
     hw = _to_hardware_profile(body.hardware_profile)
     enc, reason, ctx = recommend_encoding(
         profile,
@@ -245,7 +247,7 @@ def recommend_explain(body: ExplainRequest) -> ExplainResponse:
 
     # Perfil + recomendação (com hardware_profile opcional)
     hw = _to_hardware_profile(body.hardware_profile)
-    profile = infer_data_profile(raw)
+    profile = infer_data_profile(raw, apply_fractal_budget=body.apply_fractal_budget)
     enc, reason, ctx = recommend_encoding(
         profile,
         task=body.task,
@@ -257,7 +259,14 @@ def recommend_explain(body: ExplainRequest) -> ExplainResponse:
     # Simular o circuito recomendado para obter métricas reais (depth, qubits)
     # Se include_bloch=True, captura também o statevector para a esfera de Bloch
     sim_result = None
-    data_arr = raw if isinstance(raw, list) else None
+    data_arr = None
+    if isinstance(raw, list) and len(raw) > 0:
+        arr = np.asarray(raw, dtype=float)
+        cols = profile.selected_columns if profile.fractal_selection_applied else None
+        if arr.ndim == 2:
+            data_arr = apply_column_selection_row(arr[0], cols).tolist()
+        else:
+            data_arr = apply_column_selection_row(arr, cols).tolist()
     if data_arr and len(data_arr) > 0:
         try:
             qc = build_encoding_circuit(enc, data_arr, n_qubits=body.n_qubits)
@@ -325,6 +334,7 @@ def compare(body: CompareRequest) -> str:
             "task": body.task,
             "algorithm": body.algorithm,
             "problem_description": body.problem_description,
+            "apply_fractal_budget": body.apply_fractal_budget,
         },
     )
 
@@ -347,6 +357,7 @@ async def compare_csv(
     label_column: Annotated[str | None, Form()] = None,
     optimize_features: Annotated[bool, Form()] = False,
     optimization_encoding: Annotated[str | None, Form()] = None,
+    apply_fractal_budget: Annotated[bool, Form()] = True,
 ) -> str:
     """
     Multipart: `file` + opcionalmente `problem_description` (texto livre: problema, tarefa, algoritmo).
@@ -382,6 +393,7 @@ async def compare_csv(
         optimize_features=optimize_features,
         optimization_encoding=opt_enc,
         feature_column_names=col_names,
+        apply_fractal_budget=apply_fractal_budget,
     )
     return format_comparison_report(cr)
 

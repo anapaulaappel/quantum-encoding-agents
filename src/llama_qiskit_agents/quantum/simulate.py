@@ -11,6 +11,7 @@ from qiskit_aer import AerSimulator
 
 from llama_qiskit_agents.quantum.data_analysis import (
     DataProfile,
+    effective_n_features,
     get_encoding_tradeoffs,
     infer_data_profile,
     load_csv,
@@ -30,6 +31,7 @@ from llama_qiskit_agents.quantum.encoding_optimization import (
     optimize_feature_encoding,
     pick_encoding_for_optimization,
 )
+from llama_qiskit_agents.quantum.fractal import apply_column_selection, apply_column_selection_row
 from llama_qiskit_agents.quantum.kernel import compute_kta_by_encoding
 from llama_qiskit_agents.quantum.preprocessing import (
     FeatureBounds,
@@ -120,6 +122,7 @@ def compare_embeddings(
     optimize_features: bool = False,
     optimization_encoding: EncodingType | None = None,
     feature_column_names: list[str] | None = None,
+    apply_fractal_budget: bool = True,
 ) -> CompareEmbeddingsResult:
     """
     Compara múltiplos encodings no mesmo dado: simula cada um e retorna
@@ -135,18 +138,33 @@ def compare_embeddings(
         p = Path(data) if isinstance(data, str) else data
         if str(p).lower().endswith(".csv") and p.exists():
             full_x = load_csv(p)
-            profile = infer_data_profile(full_x)
+            profile = infer_data_profile(
+                full_x,
+                feature_names=feature_column_names,
+                apply_fractal_budget=apply_fractal_budget,
+            )
             data_arr = full_x[0] if full_x.ndim > 1 else full_x.flatten()
         else:
-            profile = infer_data_profile(data)
+            profile = infer_data_profile(data, apply_fractal_budget=apply_fractal_budget)
             data_arr = np.array([0.1, 0.2, 0.3])
     else:
         full_x = np.asarray(data)
-        profile = infer_data_profile(full_x)
+        profile = infer_data_profile(
+            full_x,
+            feature_names=feature_column_names,
+            apply_fractal_budget=apply_fractal_budget,
+        )
         if full_x.ndim > 1 and full_x.shape[0] > 0:
             data_arr = full_x[0]
         else:
             data_arr = full_x.flatten() if hasattr(full_x, "__len__") else np.array([0.0])
+
+    original_n_features = int(profile.n_features)
+    if apply_fractal_budget and full_x is not None and full_x.ndim == 2 and profile.selected_columns:
+        full_x = apply_column_selection(full_x, profile.selected_columns)
+        data_arr = apply_column_selection_row(data_arr, profile.selected_columns)
+        if feature_column_names and len(feature_column_names) >= original_n_features:
+            feature_column_names = [feature_column_names[i] for i in profile.selected_columns]
 
     if len(data_arr) == 0:
         data_arr = np.array([0.1, 0.2, 0.3])
@@ -187,7 +205,21 @@ def compare_embeddings(
         )
         if feature_optimization is not None:
             full_x = feature_optimization.plan.apply(full_x)
-            profile = infer_data_profile(full_x)
+            fractal_fields = (
+                profile.intrinsic_dimension,
+                profile.embedding_dimension or original_n_features,
+                profile.qubit_budget,
+                profile.selected_columns,
+                profile.selected_feature_names,
+                profile.fractal_selection_applied,
+            )
+            profile = infer_data_profile(full_x, apply_fractal_budget=False)
+            profile.intrinsic_dimension = fractal_fields[0]
+            profile.embedding_dimension = fractal_fields[1]
+            profile.qubit_budget = fractal_fields[2]
+            profile.selected_columns = fractal_fields[3]
+            profile.selected_feature_names = fractal_fields[4]
+            profile.fractal_selection_applied = fractal_fields[5]
             bounds = FeatureBounds.fit(full_x) if full_x.shape[0] >= 2 else bounds
             data_arr = full_x[0]
 
@@ -252,6 +284,30 @@ def format_comparison_report(
         f"  Descrição: {cr.profile.description}",
         "",
     ]
+
+    if cr.profile.intrinsic_dimension is not None:
+        n_used = effective_n_features(cr.profile)
+        e_orig = cr.profile.embedding_dimension or cr.profile.n_features
+        cols = cr.profile.selected_columns or []
+        names = cr.profile.selected_feature_names
+        if names:
+            col_txt = ", ".join(names)
+        else:
+            col_txt = ", ".join(str(c) for c in cols)
+        lines.extend([
+            "=== Orçamento fractal (D2 / FD-ASE) ===",
+            f"  E original: {e_orig} colunas",
+            f"  D2 ≈ {cr.profile.intrinsic_dimension:.3f}",
+            f"  q* = max(2, ceil(D2)) = {cr.profile.qubit_budget}",
+            f"  Colunas FD-ASE ({len(cols)}): [{col_txt}]",
+            f"  Largura efetiva: {n_used} (recorte {'aplicado' if cr.profile.fractal_selection_applied else 'não aplicado'})",
+            (
+                "  Recorte aplicado: KTA abaixo é neste subconjunto."
+                if cr.profile.fractal_selection_applied
+                else "  Recorte NÃO aplicado: KTA abaixo é nas colunas originais; a seleção acima é aviso."
+            ),
+            "",
+        ])
 
     if cr.labels is not None:
         n_cls = len(set(cr.labels))
@@ -327,6 +383,7 @@ def compare_embeddings_report(
     optimize_features: bool = False,
     optimization_encoding: EncodingType | None = None,
     feature_column_names: list[str] | None = None,
+    apply_fractal_budget: bool = True,
 ) -> str:
     """
     Compara todos os encodings no dado: simula cada um e retorna relatório
@@ -349,6 +406,7 @@ def compare_embeddings_report(
         optimize_features=optimize_features,
         optimization_encoding=optimization_encoding,
         feature_column_names=feature_column_names,
+        apply_fractal_budget=apply_fractal_budget,
     )
     return format_comparison_report(cr)
 
