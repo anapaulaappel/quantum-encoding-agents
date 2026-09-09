@@ -193,6 +193,7 @@ def compare_embeddings_report_tool(
     algorithm: str | None = None,
     problem_description: str | None = None,
     apply_fractal_budget: bool = True,
+    sweep_qubit_budget: bool = True,
 ) -> str:
     parsed = _parse_numeric_data(data)
     return compare_embeddings_report(
@@ -203,6 +204,7 @@ def compare_embeddings_report_tool(
         algorithm=algorithm,
         problem_description=problem_description,
         apply_fractal_budget=apply_fractal_budget,
+        sweep_qubit_budget=sweep_qubit_budget,
     )
 
 
@@ -215,6 +217,7 @@ def compare_csv_embeddings(
     optimize_features: bool = False,
     optimization_encoding: str | None = None,
     apply_fractal_budget: bool = True,
+    sweep_qubit_budget: bool = True,
 ) -> str:
     if not csv_content or not csv_content.strip():
         return "csv_content vazio."
@@ -245,6 +248,7 @@ def compare_csv_embeddings(
         optimization_encoding=opt_enc,
         feature_column_names=col_names,
         apply_fractal_budget=apply_fractal_budget,
+        sweep_qubit_budget=sweep_qubit_budget,
     )
     return format_comparison_report(cr)
 
@@ -280,10 +284,20 @@ def compute_quantum_kernel(
     cap = kernel_caption(result.n_samples, enc.value, result.stats, lang=lang)
     kta = result.stats.get("kta")
     kta_line = f"\nKTA = {kta:.4f}" if kta is not None else ""
+    alive = result.stats.get("kernel_alive")
+    alive_line = ""
+    if alive is not None:
+        status = "ALIVE" if alive >= 0.5 else "DEAD"
+        alive_line = (
+            f"\nKernel alive: {status} "
+            f"(near={result.stats.get('fid_near', 0):.3f}, "
+            f"far={result.stats.get('fid_far', 0):.3f}, "
+            f"ratio={result.stats.get('near_far_ratio', 0):.2f})"
+        )
     n = result.n_samples
     preview = result.kernel_matrix[: min(5, n), : min(5, n)].tolist()
     return (
-        f"Kernel {enc.value}: {n} amostras × {result.n_features} features.{kta_line}\n"
+        f"Kernel {enc.value}: {n} amostras × {result.n_features} features.{kta_line}{alive_line}\n"
         f"Stats: {result.stats}\n"
         f"Preview K (até 5×5): {preview}\n"
         f"{cap}"
@@ -391,7 +405,7 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "compare_embeddings_report",
-            "description": "Compara os 7 encodings: simulação, ranking, preprocess, simulabilidade clássica.",
+            "description": "Compara os 7 encodings: simulação, ranking, KTA (se labels), kernel-alive (N≥4), sweep q (FD-ASE vs PCA vs prefixo), preprocess, simulabilidade clássica.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -406,6 +420,11 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "default": True,
                         "description": "Se True, aplica o recorte FD-ASE antes do ranking KTA. D2/seleção são estimados mesmo se False.",
                     },
+                    "sweep_qubit_budget": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Se True e D2 foi estimado, varre q em FD-ASE vs PCA vs prefixo (probe = angle).",
+                    },
                 },
                 "required": ["data"],
             },
@@ -417,6 +436,7 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "name": "compare_csv_embeddings",
             "description": (
                 "Compara encodings a partir de CSV (texto). Com labels, ranking por KTA. "
+                "Com D2, sweep q FD-ASE vs PCA vs prefixo. "
                 "optimize_features=true busca ordem/seleção/peso de colunas (Fioravanti et al.)."
             ),
             "parameters": {
@@ -441,6 +461,11 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "default": True,
                         "description": "Se True, recorta FD-ASE antes do KTA guloso. D2/seleção continuam no relatório se False.",
                     },
+                    "sweep_qubit_budget": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Se True e D2 foi estimado, varre q em FD-ASE vs PCA vs prefixo (probe = angle).",
+                    },
                 },
                 "required": ["csv_content"],
             },
@@ -450,7 +475,7 @@ _OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "compute_quantum_kernel",
-            "description": "Calcula matriz K_ij = |⟨φ(x_i)|φ(x_j)⟩|² e KTA se labels forem passados.",
+            "description": "Calcula matriz K_ij = |⟨φ(x_i)|φ(x_j)⟩|², KTA se labels, e kernel-alive (geometria near/far).",
             "parameters": {
                 "type": "object",
                 "properties": {

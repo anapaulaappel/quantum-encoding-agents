@@ -32,7 +32,19 @@ from llama_qiskit_agents.quantum.encoding_optimization import (
     pick_encoding_for_optimization,
 )
 from llama_qiskit_agents.quantum.fractal import apply_column_selection, apply_column_selection_row
-from llama_qiskit_agents.quantum.kernel import compute_kta_by_encoding
+from llama_qiskit_agents.quantum.kernel import (
+    MAX_QUBITS_FOR_KERNEL_DIAGNOSTICS,
+    KernelGeometry,
+    compute_kernel_diagnostics_by_encoding,
+    format_kernel_alive_section,
+)
+from llama_qiskit_agents.quantum.qubit_sweep import (
+    DEFAULT_SWEEP_N_SAMPLES,
+    DEFAULT_SWEEP_Q_MAX,
+    QubitSweepResult,
+    format_qubit_sweep_section,
+    run_qubit_budget_sweep,
+)
 from llama_qiskit_agents.quantum.preprocessing import (
     FeatureBounds,
     format_preprocess_section,
@@ -65,11 +77,13 @@ class CompareEmbeddingsResult:
     reason: str
     context: ProblemContext
     kta_by_encoding: dict[EncodingType, float] | None = None
+    kernel_geometry_by_encoding: dict[EncodingType, KernelGeometry] | None = None
     labels: list[int] | None = None
     feature_bounds: FeatureBounds | None = None
     sample_row: np.ndarray | None = None
     feature_optimization: FeatureOptimizationResult | None = None
     feature_column_names: list[str] | None = None
+    qubit_sweep: QubitSweepResult | None = None
 
 
 def simulate_encoding_circuit(
@@ -123,11 +137,16 @@ def compare_embeddings(
     optimization_encoding: EncodingType | None = None,
     feature_column_names: list[str] | None = None,
     apply_fractal_budget: bool = True,
+    sweep_qubit_budget: bool = True,
+    sweep_q_max: int = DEFAULT_SWEEP_Q_MAX,
+    sweep_n_samples: int = DEFAULT_SWEEP_N_SAMPLES,
 ) -> CompareEmbeddingsResult:
     """
     Compara múltiplos encodings no mesmo dado: simula cada um e retorna
     resultados, perfil do dado, encoding recomendado e justificativa.
     Com labels (≥2 classes), calcula KTA por encoding para reordenar o ranking.
+    Com N≥4, avalia também kernel-alive (geometria de K, independente de rótulo).
+    Com D2 estimado, varre q em FD-ASE vs PCA vs prefixo (probe = angle).
     """
     if encoding_types is None:
         encoding_types = list(EncodingType)
@@ -160,6 +179,9 @@ def compare_embeddings(
             data_arr = full_x.flatten() if hasattr(full_x, "__len__") else np.array([0.0])
 
     original_n_features = int(profile.n_features)
+    original_x: np.ndarray | None = None
+    if full_x is not None and full_x.ndim == 2:
+        original_x = np.asarray(full_x, dtype=float)
     if apply_fractal_budget and full_x is not None and full_x.ndim == 2 and profile.selected_columns:
         full_x = apply_column_selection(full_x, profile.selected_columns)
         data_arr = apply_column_selection_row(data_arr, profile.selected_columns)
@@ -238,23 +260,59 @@ def compare_embeddings(
             continue
 
     kta_scores: dict[EncodingType, float] | None = None
+    geometry: dict[EncodingType, KernelGeometry] | None = None
+    if full_x is not None and full_x.ndim == 2 and full_x.shape[0] >= 2:
+        labels_for_kta: list[int] | None = None
+        if (
+            labels is not None
+            and len(labels) == full_x.shape[0]
+            and len(set(labels)) >= 2
+        ):
+            labels_for_kta = labels
+        encodings_for_diag = [
+            r.encoding_type
+            for r in results
+            if r.num_qubits <= MAX_QUBITS_FOR_KERNEL_DIAGNOSTICS
+        ]
+        if encodings_for_diag:
+            diagnostics = compute_kernel_diagnostics_by_encoding(
+                full_x,
+                labels=labels_for_kta,
+                encoding_types=encodings_for_diag,
+                n_qubits=n_qubits,
+                feature_bounds=bounds,
+            )
+            if diagnostics:
+                kta_scores = {
+                    enc: diag.kta
+                    for enc, diag in diagnostics.items()
+                    if diag.kta is not None
+                } or None
+                if full_x.shape[0] >= 4:
+                    geometry = {enc: diag.geometry for enc, diag in diagnostics.items()}
+
+    qubit_sweep: QubitSweepResult | None = None
     if (
-        labels is not None
-        and full_x is not None
-        and full_x.ndim == 2
-        and full_x.shape[0] >= 2
-        and len(labels) == full_x.shape[0]
-        and len(set(labels)) >= 2
+        sweep_qubit_budget
+        and original_x is not None
+        and profile.intrinsic_dimension is not None
     ):
-        kta_scores = compute_kta_by_encoding(
-            full_x,
-            labels,
-            encoding_types=[r.encoding_type for r in results],
-            n_qubits=n_qubits,
-            feature_bounds=bounds,
+        labels_for_sweep: list[int] | None = None
+        if (
+            labels is not None
+            and len(labels) == original_x.shape[0]
+            and len(set(labels)) >= 2
+        ):
+            labels_for_sweep = labels
+        qubit_sweep = run_qubit_budget_sweep(
+            original_x,
+            labels=labels_for_sweep,
+            fdase_columns=profile.selected_columns,
+            q_star=profile.qubit_budget,
+            d2=profile.intrinsic_dimension,
+            q_max=sweep_q_max,
+            max_samples=sweep_n_samples,
         )
-        if not kta_scores:
-            kta_scores = None
 
     return CompareEmbeddingsResult(
         results=results,
@@ -263,11 +321,13 @@ def compare_embeddings(
         reason=reason,
         context=ctx,
         kta_by_encoding=kta_scores,
+        kernel_geometry_by_encoding=geometry,
         labels=labels,
         feature_bounds=bounds,
         sample_row=np.asarray(data_arr, dtype=float),
         feature_optimization=feature_optimization,
         feature_column_names=feature_column_names,
+        qubit_sweep=qubit_sweep,
     )
 
 
@@ -302,9 +362,9 @@ def format_comparison_report(
             f"  Colunas FD-ASE ({len(cols)}): [{col_txt}]",
             f"  Largura efetiva: {n_used} (recorte {'aplicado' if cr.profile.fractal_selection_applied else 'não aplicado'})",
             (
-                "  Recorte aplicado: KTA abaixo é neste subconjunto."
+                "  Recorte aplicado: KTA e kernel-alive abaixo são neste subconjunto."
                 if cr.profile.fractal_selection_applied
-                else "  Recorte NÃO aplicado: KTA abaixo é nas colunas originais; a seleção acima é aviso."
+                else "  Recorte NÃO aplicado: KTA e kernel-alive abaixo são nas colunas originais; a seleção acima é aviso."
             ),
             "",
         ])
@@ -361,8 +421,15 @@ def format_comparison_report(
             cr.results,
             cr.context,
             kta_by_encoding=cr.kta_by_encoding,
+            kernel_alive_by_encoding=(
+                {enc: geo.kernel_alive for enc, geo in cr.kernel_geometry_by_encoding.items()}
+                if cr.kernel_geometry_by_encoding
+                else None
+            ),
         )
     )
+    lines.extend(format_kernel_alive_section(cr.kernel_geometry_by_encoding))
+    lines.extend(format_qubit_sweep_section(cr.qubit_sweep))
     lines.extend(format_measurements_note_section(cr.results))
     lines.extend(format_simulability_section(cr.results, iqp_pairwise="all"))
     lines.append("=== Trade-offs por tipo de encoding ===")
@@ -384,10 +451,11 @@ def compare_embeddings_report(
     optimization_encoding: EncodingType | None = None,
     feature_column_names: list[str] | None = None,
     apply_fractal_budget: bool = True,
+    sweep_qubit_budget: bool = True,
 ) -> str:
     """
     Compara todos os encodings no dado: simula cada um e retorna relatório
-    com perfil, recomendação, KTA (se labels), pré-processamento e trade-offs.
+    com perfil, recomendação, KTA (se labels), kernel-alive (N≥4), sweep q e trade-offs.
     """
     if isinstance(data, (str, Path)):
         data_input: np.ndarray | list[float] | str | Path = data
@@ -407,6 +475,7 @@ def compare_embeddings_report(
         optimization_encoding=optimization_encoding,
         feature_column_names=feature_column_names,
         apply_fractal_budget=apply_fractal_budget,
+        sweep_qubit_budget=sweep_qubit_budget,
     )
     return format_comparison_report(cr)
 

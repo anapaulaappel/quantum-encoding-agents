@@ -79,6 +79,36 @@ def _pick_one_sample_per_class(y: list[int]) -> list[tuple[int, int]]:
     return [(idx, lbl) for lbl, idx in sorted(by_class.items())]
 
 
+def _subsample_stratified(
+    X: np.ndarray,
+    y: list[int],
+    max_samples: int,
+    *,
+    seed: int = 42,
+) -> tuple[np.ndarray, list[int]]:
+    """Primeiras N linhas do Iris vêm de uma só classe; o hardware precisa das duas."""
+    n = X.shape[0]
+    if n <= max_samples:
+        return X, y
+    y_arr = np.asarray(y)
+    classes = sorted(set(y))
+    rng = np.random.default_rng(seed)
+    per = max(1, max_samples // max(1, len(classes)))
+    idx: list[int] = []
+    for lab in classes:
+        lab_idx = np.where(y_arr == lab)[0]
+        take = min(per, len(lab_idx))
+        idx.extend(int(i) for i in rng.choice(lab_idx, size=take, replace=False))
+    leftover = max_samples - len(idx)
+    if leftover > 0:
+        rest = np.setdiff1d(np.arange(n), np.asarray(idx, dtype=int))
+        if len(rest) > 0:
+            extra = rng.choice(rest, size=min(leftover, len(rest)), replace=False)
+            idx.extend(int(i) for i in np.atleast_1d(extra))
+    chosen = np.asarray(sorted(idx), dtype=int)
+    return X[chosen], [y[int(i)] for i in chosen]
+
+
 def _apply_plan(X: np.ndarray, plan: FeatureEncodingPlan) -> np.ndarray:
     return plan.apply(X)
 
@@ -108,9 +138,7 @@ def build_hardware_job_specs(
         raise ValueError("Hardware benchmark requer labels binários (≥2 classes).")
 
     if X.shape[0] > max_samples:
-        idx = np.arange(X.shape[0])[:max_samples]
-        X = X[idx]
-        y = [y[int(i)] for i in idx]
+        X, y = _subsample_stratified(X, y, max_samples)
 
     enc = encoding
     target = pick_encoding_for_optimization(X, y, preferred=enc, max_samples=min(25, X.shape[0]))
@@ -204,8 +232,10 @@ def run_hardware_benchmark(
         result.notes.append(f"Limitado a max_jobs={max_jobs}.")
 
     X_fit = np.asarray(dataset.X, dtype=float)
+    y_fit = dataset.y
     if X_fit.shape[0] > max_samples:
-        X_fit = X_fit[:max_samples]
+        X_fit, y_fit = _subsample_stratified(X_fit, y_fit, max_samples)
+    del y_fit
     bounds_by_plan = {
         "baseline": _bounds_for_plan(baseline_plan, X_fit),
         "optimized": _bounds_for_plan(optimized_plan, X_fit),

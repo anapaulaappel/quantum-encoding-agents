@@ -156,12 +156,14 @@ def test_apply_fractal_budget_false_keeps_selection_advisory() -> None:
         encoding_types=[EncodingType.ANGLE],
         shots=8,
         apply_fractal_budget=True,
+        sweep_qubit_budget=False,
     )
     cr_off = compare_embeddings(
         x,
         encoding_types=[EncodingType.ANGLE],
         shots=8,
         apply_fractal_budget=False,
+        sweep_qubit_budget=False,
     )
     assert cr_off.profile.selected_columns is not None
     assert cr_off.profile.fractal_selection_applied is False

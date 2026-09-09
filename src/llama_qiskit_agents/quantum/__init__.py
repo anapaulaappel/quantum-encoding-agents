@@ -21,6 +21,11 @@ from llama_qiskit_agents.quantum.fractal import (
     FractalBudget,
     estimate_fractal_budget,
 )
+from llama_qiskit_agents.quantum.qubit_sweep import (
+    QubitSweepResult,
+    pca_variance_qubits,
+    run_qubit_budget_sweep,
+)
 from llama_qiskit_agents.quantum.hardware_profile import (
     HardwareProfile,
     NISQ_GATE_ERROR_THRESHOLD,
@@ -43,11 +48,15 @@ from llama_qiskit_agents.quantum.visualization import (
 )
 from llama_qiskit_agents.quantum.kernel import (
     compute_kernel,
+    compute_kernel_diagnostics_by_encoding,
     compute_kernel_matrix,
     compute_kta_by_encoding,
+    kernel_is_alive,
     kernel_stats,
     render_kernel_heatmap,
     kernel_caption,
+    score_kernel_geometry,
+    KernelGeometry,
     KernelResult,
 )
 from llama_qiskit_agents.quantum.preprocessing import (
@@ -92,6 +101,9 @@ __all__ = [
     "FDASE",
     "FractalBudget",
     "estimate_fractal_budget",
+    "QubitSweepResult",
+    "pca_variance_qubits",
+    "run_qubit_budget_sweep",
     # hardware profile
     "HardwareProfile",
     "NISQ_GATE_ERROR_THRESHOLD",
@@ -111,10 +123,14 @@ __all__ = [
     # kernel
     "compute_kernel",
     "compute_kernel_matrix",
+    "compute_kernel_diagnostics_by_encoding",
     "compute_kta_by_encoding",
+    "kernel_is_alive",
     "kernel_stats",
     "render_kernel_heatmap",
     "kernel_caption",
+    "score_kernel_geometry",
+    "KernelGeometry",
     "KernelResult",
     "FeatureBounds",
     "PreprocessResult",

@@ -1,1 +1,1 @@
-"""Benchmarks reprodutíveis — Iris, Breast Cancer, Wine, sintético."""
+"""Benchmarks reprodutíveis — Iris, Breast Cancer, Wine, moons, sintético."""

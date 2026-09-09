@@ -335,6 +335,7 @@ def compare(body: CompareRequest) -> str:
             "algorithm": body.algorithm,
             "problem_description": body.problem_description,
             "apply_fractal_budget": body.apply_fractal_budget,
+            "sweep_qubit_budget": body.sweep_qubit_budget,
         },
     )
 
@@ -358,12 +359,14 @@ async def compare_csv(
     optimize_features: Annotated[bool, Form()] = False,
     optimization_encoding: Annotated[str | None, Form()] = None,
     apply_fractal_budget: Annotated[bool, Form()] = True,
+    sweep_qubit_budget: Annotated[bool, Form()] = True,
 ) -> str:
     """
     Multipart: `file` + opcionalmente `problem_description` (texto livre: problema, tarefa, algoritmo).
     Coluna de label: auto-detect (label/class/target/y ou última coluna categórica) ou `label_column`.
     Com labels, o ranking usa KTA por encoding.
     `optimize_features=true` (requer labels): busca ordem/seleção/peso de colunas por KTA [EncOpt25].
+    `sweep_qubit_budget=true` (requer D2): curva q FD-ASE vs PCA vs prefixo (probe = angle).
     """
     text = (await file.read()).decode("utf-8-sig")
     try:
@@ -394,6 +397,7 @@ async def compare_csv(
         optimization_encoding=opt_enc,
         feature_column_names=col_names,
         apply_fractal_budget=apply_fractal_budget,
+        sweep_qubit_budget=sweep_qubit_budget,
     )
     return format_comparison_report(cr)
 

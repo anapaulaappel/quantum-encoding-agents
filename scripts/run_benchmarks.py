@@ -8,7 +8,8 @@ Uso:
   pip install -e ".[benchmark]"
   python scripts/run_benchmarks.py
   python scripts/run_benchmarks.py --quick          # só iris + sintético, sem compare 7x
-  python scripts/run_benchmarks.py --dataset iris_binary
+  python scripts/run_benchmarks.py --dataset breast_cancer_fdase --no-compare
+  python scripts/run_benchmarks.py --dataset breast_cancer_top6 --no-fractal --no-compare
   python scripts/run_benchmarks.py --json results.json
 """
 
@@ -26,8 +27,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
 from benchmarks.datasets import (  # noqa: E402
+    DEFAULT_SUITE_SLUGS,
     list_benchmark_slugs,
-    load_all_benchmark_datasets,
     load_benchmark_dataset,
 )
 from benchmarks.runner import (  # noqa: E402
@@ -50,6 +51,11 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--shots", type=int, default=512)
     p.add_argument("--json", dest="json_out", help="Salvar resultados em JSON")
     p.add_argument("--no-compare", action="store_true", help="Pular compare_embeddings (mais rápido)")
+    p.add_argument(
+        "--no-fractal",
+        action="store_true",
+        help="Não recortar FD-ASE antes do KTA (protocolo legado, ex.: breast top-6).",
+    )
     return p.parse_args()
 
 
@@ -60,14 +66,18 @@ def main() -> int:
         slugs = ["iris_binary", "synthetic_order"]
         run_compare = False
     else:
-        slugs = args.datasets or list_benchmark_slugs()
+        slugs = args.datasets or list(DEFAULT_SUITE_SLUGS)
         run_compare = not args.no_compare
 
     datasets = [load_benchmark_dataset(s) for s in slugs]
+    apply_fractal = not args.no_fractal
 
     print("Quantum Encoding Agents — benchmark suite")
     print(f"Datasets: {', '.join(slugs)}")
-    print(f"max_kta_samples={args.max_kta_samples}, shots={args.shots}, compare={run_compare}")
+    print(
+        f"max_kta_samples={args.max_kta_samples}, shots={args.shots}, "
+        f"compare={run_compare}, fractal={apply_fractal}"
+    )
     print()
 
     t0 = time.perf_counter()
@@ -76,6 +86,7 @@ def main() -> int:
         max_kta_samples=args.max_kta_samples,
         shots=args.shots,
         run_compare=run_compare,
+        apply_fractal_budget=apply_fractal,
     )
     elapsed = time.perf_counter() - t0
 

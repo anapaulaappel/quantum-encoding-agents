@@ -7,7 +7,7 @@ Simulador primeiro (KTA + otimização); hardware valida transpile + execução 
 Uso:
   pip install -e ".[benchmark,ibm]"
   export QISKIT_IBM_TOKEN=...                    # ou ibm-quantum-login
-  export IBM_QUANTUM_BACKEND=ibm_torino          # opcional
+  export IBM_QUANTUM_BACKEND=ibm_fez          # opcional
 
   # Só transpile (não gasta QPU — planeje a corrida)
   python scripts/run_hardware_benchmarks.py --preset week1_iris --dry-run
@@ -48,7 +48,7 @@ def _parse_args() -> argparse.Namespace:
         help="Roteiro mensal enxuto (1 preset ≈ 1 semana / 1 corrida)",
     )
     p.add_argument("--dataset", default="", help=f"Slug: {', '.join(list_benchmark_slugs())}")
-    p.add_argument("--backend", default="", help="Backend IBM (default: IBM_QUANTUM_BACKEND ou ibm_torino)")
+    p.add_argument("--backend", default="", help="Backend IBM (default: IBM_QUANTUM_BACKEND ou ibm_fez)")
     p.add_argument("--encoding", default="angle", help="Encoding shallow: angle, dense_angle, basis")
     p.add_argument("--shots", type=int, default=512)
     p.add_argument("--max-jobs", type=int, default=4)

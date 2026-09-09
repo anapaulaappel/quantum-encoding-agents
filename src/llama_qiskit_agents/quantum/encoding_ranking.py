@@ -71,6 +71,19 @@ def _alternativa_rationale(
     return " ".join(parts) if parts else _WHEN[enc]
 
 
+def _metric_suffix(
+    enc: EncodingType,
+    kta_by_encoding: dict[EncodingType, float] | None,
+    kernel_alive_by_encoding: dict[EncodingType, bool] | None,
+) -> str:
+    parts: list[str] = []
+    if kta_by_encoding and enc in kta_by_encoding:
+        parts.append(f"KTA={kta_by_encoding[enc]:.4f}")
+    if kernel_alive_by_encoding and enc in kernel_alive_by_encoding:
+        parts.append("kernel=ALIVE" if kernel_alive_by_encoding[enc] else "kernel=DEAD")
+    return (", " + ", ".join(parts)) if parts else ""
+
+
 def format_encoding_ranking_section(
     profile: DataProfile,
     recommended: EncodingType,
@@ -78,6 +91,7 @@ def format_encoding_ranking_section(
     results: list,
     problem_context: ProblemContext | None = None,
     kta_by_encoding: dict[EncodingType, float] | None = None,
+    kernel_alive_by_encoding: dict[EncodingType, bool] | None = None,
 ) -> list[str]:
     """
     Blocos de texto para o relatório: ranking ordenado com 'por quê'.
@@ -118,11 +132,9 @@ def format_encoding_ranking_section(
         ]
         for i, enc in enumerate(ordered, start=1):
             r = by_type[enc]
-            kta_note = ""
-            if kta_by_encoding and enc in kta_by_encoding:
-                kta_note = f", KTA={kta_by_encoding[enc]:.4f}"
+            suffix = _metric_suffix(enc, kta_by_encoding, kernel_alive_by_encoding)
             lines.append(
-                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{kta_note}"
+                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{suffix}"
             )
             lines.append(f"     Notas: {_WHEN[enc]}")
             lines.append("")
@@ -148,12 +160,10 @@ def format_encoding_ranking_section(
     sim_rec = by_type.get(recommended) or by_type[ordered[0]]
     for i, enc in enumerate(ordered, start=1):
         r = by_type[enc]
-        kta_suffix = ""
-        if kta_by_encoding and enc in kta_by_encoding:
-            kta_suffix = f", KTA={kta_by_encoding[enc]:.4f}"
+        suffix = _metric_suffix(enc, kta_by_encoding, kernel_alive_by_encoding)
         if i == 1 and kta_by_encoding and enc in kta_by_encoding:
             lines.append(
-                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{kta_suffix}"
+                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{suffix}"
             )
             lines.append(
                 f"     Por quê (melhor KTA): alinhamento kernel-target={kta_by_encoding[enc]:.4f} "
@@ -166,7 +176,7 @@ def format_encoding_ranking_section(
                 )
         elif i == 1 and enc == recommended:
             lines.append(
-                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{kta_suffix}"
+                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{suffix}"
             )
             lines.append(f"     Por quê (escolha principal): {summary}")
         else:
@@ -174,7 +184,7 @@ def format_encoding_ranking_section(
                 enc, recommended, profile, r, sim_rec, problem_context
             )
             lines.append(
-                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{kta_suffix}"
+                f"  {i}. {enc.value}  |  qubits={r.num_qubits}, profundidade≈{r.depth}{suffix}"
             )
             lines.append(f"     Por quê (alternativa): {why}")
         lines.append("")

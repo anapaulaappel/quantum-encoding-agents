@@ -1,0 +1,144 @@
+{
+  "backend": "ibm_fez",
+  "shots": 512,
+  "histograms_vs_aer": [
+    {
+      "label": "class0_baseline",
+      "plan": "baseline",
+      "class_label": 0,
+      "job_id": "daa8h76rbfbs73cie5ug",
+      "n_qubits": 4,
+      "isa_depth": 5,
+      "qpu_mode": "0010",
+      "qpu_p_mode": 0.73,
+      "aer_mode": "0010",
+      "aer_p_mode": 0.783,
+      "aer_p_at_qpu_mode": 0.783
+    },
+    {
+      "label": "class0_optimized",
+      "plan": "optimized",
+      "class_label": 0,
+      "job_id": "daa8hc4e74ec73akho50",
+      "n_qubits": 3,
+      "isa_depth": 5,
+      "qpu_mode": "001",
+      "qpu_p_mode": 0.838,
+      "aer_mode": "001",
+      "aer_p_mode": 0.885,
+      "aer_p_at_qpu_mode": 0.885
+    },
+    {
+      "label": "class1_baseline",
+      "plan": "baseline",
+      "class_label": 1,
+      "job_id": "daa8hk4jbipc73ffkqcg",
+      "n_qubits": 4,
+      "isa_depth": 5,
+      "qpu_mode": "1101",
+      "qpu_p_mode": 0.807,
+      "aer_mode": "1101",
+      "aer_p_mode": 0.822,
+      "aer_p_at_qpu_mode": 0.822
+    },
+    {
+      "label": "class1_optimized",
+      "plan": "optimized",
+      "class_label": 1,
+      "job_id": "daa8hrcjbipc73ffkqlg",
+      "n_qubits": 3,
+      "isa_depth": 5,
+      "qpu_mode": "110",
+      "qpu_p_mode": 0.936,
+      "aer_mode": "110",
+      "aer_p_mode": 0.977,
+      "aer_p_at_qpu_mode": 0.977
+    }
+  ],
+  "kernel_lite": [
+    {
+      "pair": "intra0",
+      "i": 0,
+      "j": 1,
+      "exact": 0.633,
+      "aer_shots": 0.654,
+      "qpu": 0.631,
+      "qpu_counts_top": {
+        "0000": 323,
+        "0010": 125,
+        "0001": 32
+      }
+    },
+    {
+      "pair": "intra1",
+      "i": 2,
+      "j": 3,
+      "exact": 0.681,
+      "aer_shots": 0.709,
+      "qpu": 0.645,
+      "qpu_counts_top": {
+        "0000": 330,
+        "0010": 97,
+        "0001": 32
+      }
+    },
+    {
+      "pair": "inter_0a1a",
+      "i": 0,
+      "j": 2,
+      "exact": 0.0,
+      "aer_shots": 0.0,
+      "qpu": 0.0,
+      "qpu_counts_top": {
+        "1111": 171,
+        "1110": 159,
+        "0111": 66
+      }
+    },
+    {
+      "pair": "inter_0a1b",
+      "i": 0,
+      "j": 3,
+      "exact": 0.004,
+      "aer_shots": 0.002,
+      "qpu": 0.004,
+      "qpu_counts_top": {
+        "1111": 131,
+        "1101": 105,
+        "0111": 61
+      }
+    },
+    {
+      "pair": "inter_0b1a",
+      "i": 1,
+      "j": 2,
+      "exact": 0.001,
+      "aer_shots": 0.002,
+      "qpu": 0.0,
+      "qpu_counts_top": {
+        "1111": 129,
+        "1101": 127,
+        "0111": 73
+      }
+    },
+    {
+      "pair": "inter_0b1b",
+      "i": 1,
+      "j": 3,
+      "exact": 0.002,
+      "aer_shots": 0.002,
+      "qpu": 0.008,
+      "qpu_counts_top": {
+        "1101": 205,
+        "0101": 161,
+        "1001": 43
+      }
+    }
+  ],
+  "mini_kta": {
+    "exact": 0.6908,
+    "aer": 0.6933,
+    "qpu": 0.6879
+  },
+  "qpu_job_id": "daa8m04e74ec73akhtd0"
+}

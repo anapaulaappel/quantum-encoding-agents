@@ -5,8 +5,8 @@ Opcional: pip install -e ".[ibm]"
 Autenticação: QISKIT_IBM_TOKEN ou `ibm-quantum-login` (salvo localmente).
 
 Uso típico:
-  stats = transpile_encoding_circuit(qc, backend_name="ibm_torino")
-  result = run_encoding_circuit(qc, backend_name="ibm_torino", shots=512)
+  stats = transpile_encoding_circuit(qc, backend_name="ibm_fez")
+  result = run_encoding_circuit(qc, backend_name="ibm_fez", shots=512)
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
+import numpy as np
 from qiskit import QuantumCircuit, transpile
 
 from llama_qiskit_agents.quantum.encodings import EncodingType, build_encoding_circuit
@@ -66,7 +67,7 @@ def resolve_backend_name(explicit: str | None = None) -> str:
     env = os.environ.get("IBM_QUANTUM_BACKEND", "").strip()
     if env:
         return env
-    return "ibm_torino"
+    return "ibm_fez"
 
 
 def get_ibm_backend(backend_name: str | None = None):
@@ -77,7 +78,21 @@ def get_ibm_backend(backend_name: str | None = None):
     name = resolve_backend_name(backend_name)
     token = os.environ.get("QISKIT_IBM_TOKEN", "").strip() or None
     service = QiskitRuntimeService(token=token) if token else QiskitRuntimeService()
-    return service.backend(name)
+    try:
+        return service.backend(name)
+    except Exception as exc:
+        available = []
+        try:
+            for b in service.backends(operational=True, simulator=False):
+                pending = getattr(b.status(), "pending_jobs", "?")
+                available.append(f"{b.name}(pending={pending})")
+        except Exception:
+            pass
+        hint = f" Disponíveis agora: {', '.join(available)}." if available else ""
+        raise IBMHardwareError(
+            f"Backend '{name}' indisponível neste plano.{hint} "
+            "Passe --backend ou IBM_QUANTUM_BACKEND."
+        ) from exc
 
 
 def _two_qubit_count(circuit: QuantumCircuit) -> int:
@@ -125,6 +140,72 @@ def transpile_encoding_circuit(
     )
 
 
+def _counts_from_pub(pub) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    try:
+        if hasattr(pub, "join_data"):
+            data = pub.join_data()
+            if hasattr(data, "get_counts"):
+                return dict(data.get_counts())
+        if hasattr(pub, "data"):
+            for item in pub.data:
+                if hasattr(item, "get_counts"):
+                    return dict(item.get_counts())
+    except Exception:
+        return {}
+    return counts
+
+
+def run_encoding_circuits(
+    circuits: list[QuantumCircuit],
+    *,
+    backend_name: str | None = None,
+    shots: int = 512,
+    optimization_level: int = 1,
+) -> list[HardwareRunResult]:
+    """Submete vários circuitos no mesmo job SamplerV2 (uma fila)."""
+    if not circuits:
+        return []
+    _require_ibm_runtime()
+    from qiskit_ibm_runtime import SamplerV2 as Sampler
+
+    backend = get_ibm_backend(backend_name)
+    isas: list[QuantumCircuit] = []
+    for qc in circuits:
+        isa, _ = transpile_encoding_circuit(
+            qc,
+            backend_name=backend.name,
+            optimization_level=optimization_level,
+        )
+        isas.append(isa)
+
+    t0 = time.perf_counter()
+    sampler = Sampler(mode=backend)
+    job = sampler.run(isas, shots=shots)
+    result = job.result()
+    elapsed = time.perf_counter() - t0
+
+    raw_id = getattr(job, "job_id", None)
+    if callable(raw_id):
+        raw_id = raw_id()
+    job_id = str(raw_id if raw_id is not None else job)
+
+    outcomes: list[HardwareRunResult] = []
+    for i, isa in enumerate(isas):
+        counts = _counts_from_pub(result[i])
+        outcomes.append(
+            HardwareRunResult(
+                backend_name=backend.name,
+                job_id=job_id,
+                shots=shots,
+                counts=counts,
+                elapsed_sec=elapsed if i == 0 else 0.0,
+                metadata={"depth": isa.depth(), "size": isa.size(), "pub": i},
+            )
+        )
+    return outcomes
+
+
 def run_encoding_circuit(
     circuit: QuantumCircuit,
     *,
@@ -133,60 +214,24 @@ def run_encoding_circuit(
     optimization_level: int = 1,
 ) -> HardwareRunResult:
     """Executa circuito no backend IBM (consome cota / fila)."""
-    _require_ibm_runtime()
-    from qiskit_ibm_runtime import SamplerV2 as Sampler
-
-    backend = get_ibm_backend(backend_name)
-    isa, _ = transpile_encoding_circuit(
-        circuit,
-        backend_name=backend.name,
-        optimization_level=optimization_level,
-    )
-
-    t0 = time.perf_counter()
-    sampler = Sampler(mode=backend)
-    job = sampler.run([isa], shots=shots)
-    result = job.result()
-    elapsed = time.perf_counter() - t0
-
-    counts: dict[str, int] = {}
-    try:
-        pub = result[0]
-        if hasattr(pub, "join_data"):
-            data = pub.join_data()
-            if hasattr(data, "get_counts"):
-                counts = dict(data.get_counts())
-        elif hasattr(pub, "data"):
-            for item in pub.data:
-                if hasattr(item, "get_counts"):
-                    counts = dict(item.get_counts())
-                    break
-    except Exception:
-        counts = {}
-
-    job_id = getattr(job, "job_id", str(job))
-    return HardwareRunResult(
-        backend_name=backend.name,
-        job_id=str(job_id),
+    return run_encoding_circuits(
+        [circuit],
+        backend_name=backend_name,
         shots=shots,
-        counts=counts,
-        elapsed_sec=elapsed,
-        metadata={"depth": isa.depth(), "size": isa.size()},
-    )
+        optimization_level=optimization_level,
+    )[0]
 
 
 def build_sample_encoding_circuit(
-    row: list[float] | "np.ndarray",
+    row: list[float] | np.ndarray,
     encoding_type: EncodingType,
     *,
     feature_bounds=None,
 ) -> QuantumCircuit:
     """Circuito de encoding + measure_all para hardware."""
-    import numpy as np
-
     qc = build_encoding_circuit(
-        np.asarray(row, dtype=float),
         encoding_type,
+        np.asarray(row, dtype=float),
         feature_bounds=feature_bounds,
     )
     if qc.num_clbits == 0:

@@ -12,11 +12,12 @@ from typing import Callable
 import numpy as np
 
 try:
-    from sklearn.datasets import load_breast_cancer, load_iris, load_wine
+    from sklearn.datasets import load_breast_cancer, load_iris, load_wine, make_moons
 except ImportError:  # pragma: no cover - optional dep
     load_breast_cancer = None
     load_iris = None
     load_wine = None
+    make_moons = None
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,32 @@ def load_breast_cancer_top6(
     )
 
 
+def load_breast_cancer_fdase(
+    *,
+    max_samples: int = 64,
+    seed: int = 42,
+) -> BenchmarkDataset:
+    """Wisconsin Breast Cancer — E=30 originais. O runner recorta FD-ASE antes do KTA."""
+    _require_sklearn()
+    data = load_breast_cancer()
+    X = np.asarray(data.data, dtype=float)
+    y = data.target.astype(int).tolist()
+    names = list(data.feature_names)
+    X, y = _subsample(X, y, max_samples, seed)
+    return BenchmarkDataset(
+        slug="breast_cancer_fdase",
+        name="Breast Cancer Wisconsin (E=30, FD-ASE no runner)",
+        X=X,
+        y=y,
+        feature_names=names,
+        description=(
+            "UCI sklearn; 30 atributos originais. KTA/alive no recorte FD-ASE "
+            "(q*=max(2, ceil(D2))), não no top-6 por variância."
+        ),
+        tags=("public", "medium", "binary", "fractal"),
+    )
+
+
 def load_wine_binary(*, max_samples: int = 40, seed: int = 42) -> BenchmarkDataset:
     """Wine 2 classes (0 vs 1), 13 features — médio."""
     _require_sklearn()
@@ -147,6 +174,23 @@ def load_wine_binary(*, max_samples: int = 40, seed: int = 42) -> BenchmarkDatas
         feature_names=names,
         description="UCI Wine; 13 features químicas, 2 classes.",
         tags=("public", "medium", "binary"),
+    )
+
+
+def load_moons(*, max_samples: int = 40, noise: float = 0.2, seed: int = 42) -> BenchmarkDataset:
+    """Two interleaving moons — nonlinear 2-d set where default RBF is strong."""
+    _require_sklearn()
+    if make_moons is None:
+        raise ImportError("sklearn.datasets.make_moons is required")
+    X, y = make_moons(n_samples=max_samples, noise=noise, random_state=seed)
+    return BenchmarkDataset(
+        slug="moons",
+        name="Two moons (sklearn)",
+        X=np.asarray(X, dtype=float),
+        y=y.astype(int).tolist(),
+        feature_names=["x", "y"],
+        description="sklearn make_moons; 2 features, nonlinear class boundary.",
+        tags=("synthetic", "small", "binary", "nonlinear"),
     )
 
 
@@ -184,10 +228,21 @@ def load_synthetic_order_sensitive(*, n_per_class: int = 12, seed: int = 42) -> 
 
 BUILTIN_LOADERS: dict[str, Callable[..., BenchmarkDataset]] = {
     "iris_binary": load_iris_binary,
+    "breast_cancer_fdase": load_breast_cancer_fdase,
     "breast_cancer_top6": load_breast_cancer_top6,
     "wine_binary": load_wine_binary,
     "synthetic_order": load_synthetic_order_sensitive,
+    "moons": load_moons,
 }
+
+# Suite padrão: KTA/alive no recorte FD-ASE. top-6 fica disponível via --dataset.
+DEFAULT_SUITE_SLUGS: tuple[str, ...] = (
+    "iris_binary",
+    "breast_cancer_fdase",
+    "wine_binary",
+    "synthetic_order",
+    "moons",
+)
 
 
 def list_benchmark_slugs() -> list[str]:

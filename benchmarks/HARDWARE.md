@@ -7,7 +7,7 @@ Este roteiro separa **simulador** (suite completa) de **hardware** (validação 
 ```bash
 pip install -e ".[benchmark,ibm]"
 ibm-quantum-login   # ou export QISKIT_IBM_TOKEN=...
-export IBM_QUANTUM_BACKEND=ibm_torino   # opcional
+export IBM_QUANTUM_BACKEND=ibm_fez   # opcional
 ```
 
 ## Estratégia para 10 min/mês
@@ -83,5 +83,5 @@ python scripts/run_benchmarks.py --dataset breast_cancer_top6 --no-compare
 
 ## Future work
 
-- Kernel-lite no hardware: 6 pares fixos (2 intra-classe + 4 inter-classe) ≈ +6 jobs
-- Integrar `job_id` e counts no MLflow / artigo como tabela hardware vs sim
+- Kernel-lite no hardware: **feito** (Iris angle, 6 pares, 1 job Sampler em `ibm_fez`, 2026-08-30; `benchmarks/results/hardware_kernel_lite.json`)
+- Integrar `job_id` e counts no MLflow / artigo como tabela hardware vs sim — histogramas em `benchmarks/results/hardware_iris.json`

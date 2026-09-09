@@ -38,7 +38,7 @@ class HardwareProfileInput(BaseModel):
     )
     backend_name: str | None = Field(
         default=None,
-        description="Nome do backend (informativo, ex: 'ibm_torino', 'ionq_aria').",
+        description="Nome do backend (informativo, ex: 'ibm_fez', 'ionq_aria').",
     )
 
 
@@ -75,6 +75,13 @@ class DataInput(BaseModel):
 class CompareRequest(DataInput):
     n_qubits: int | None = None
     shots: int = 1024
+    sweep_qubit_budget: bool = Field(
+        default=True,
+        description=(
+            "Se True e D2 foi estimado, varre q em FD-ASE vs PCA vs prefixo "
+            "(probe = angle encoding; kernel-alive + KTA)."
+        ),
+    )
 
 
 class CircuitRequest(BaseModel):
@@ -199,7 +206,8 @@ class KernelResponse(BaseModel):
     )
     stats: dict[str, float] = Field(
         description="diagonal_mean, off_diagonal_mean, off_diagonal_std, min, max, "
-                    "separability_hint. kta incluído se labels fornecidos."
+                    "separability_hint. kta se labels; fid_near, fid_far, near_far_ratio, "
+                    "kernel_alive (1=ALIVE, 0=DEAD) quando N≥4."
     )
     heatmap_b64: str | None = Field(
         default=None,
