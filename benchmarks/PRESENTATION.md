@@ -68,16 +68,16 @@ Por isso no benchmark sintético convém colocar **feat_a** na posição 0 (prim
 
 ---
 
-## Exemplo 3 — Breast Cancer (`breast_cancer_top6`) — ganho mínimo
+## Exemplo 3 — Breast Cancer (`breast_cancer_fdase` / `breast_cancer_top6`)
 
-**Setup:** 6 features de maior variância, maligno vs benigno.
+**Default da suite (`breast_cancer_fdase`):** 30 colunas originais; o runner recorta FD-ASE (`q*` ≈ 3) **antes** do KTA — protocolo do artigo.
 
-**Otimizado (típico):** mantém `area error`, `worst perimeter`, etc.; descarta 2 colunas.
+**Variante (`breast_cancer_top6`):** 6 features de maior variância (protocolo das Tabelas 1–3 do paper). Otimizado típico: mantém `area error`, `worst perimeter`; descarta 2 colunas; ganho ~+0,006 KTA.
 
-**Frase pronta:**
+**Frase pronta (FD-ASE):**
 
-> "No Wisconsin, top features por variância já capturam o sinal; reorder + seleção dá +0,006 KTA —
-> o pipeline confirma quais colunas importam para o encoding IQP escolhido."
+> "No Wisconsin completo, D2 ≈ 2,5 → três qubits. FD-ASE escolhe colunas originais, não PCA;
+> o kernel-alive nasce perto de q* e morre na largura PCA-95%."
 
 ---
 
@@ -88,9 +88,13 @@ Parcialmente — também **ordem** e **peso**, específicos do circuito (pares Z
 
 **"Por que KTA e não acurácia?"**  
 KTA avalia o **kernel antes** de treinar classificador; alinhado ao paper e ao `/v1/kernel`.
+O relatório também traz **kernel-alive** (geometria near/far, sem rótulo): KTA alto em kernel morto é um aviso.
 
 **"Funciona em hardware?"**  
-Simulado aqui; paper [2512.02422] mostra ganho em hardware real — nosso future work é validar no IBM Quantum.
+Sim. No `ibm_fez` rodamos os 4 circuitos Iris angle (baseline vs plano KTA, uma amostra por classe) como um Sampler job (`dagota8mhr3c73e5fb20`, 9 Sep 2026, 512 shots): o bitstring dominante bate com o Aer; o pico QPU fica 5–11 pontos mais baixo. Kernel-lite (6 pares) no mesmo backend em 30 Aug 2026: mini-KTA 0.688 vs 0.691 exato. Detalhes: [`HARDWARE.md`](HARDWARE.md).
+
+**"FD-ASE e a busca KTA são a mesma coisa?"**  
+Não. FD-ASE recorta colunas **originais** pelo D2 **antes** do encoding (`q*`). A busca KTA depois reordena/seleciona/pesa no recorte. `breast_cancer_fdase` é o default da suite; `breast_cancer_top6` é o protocolo antigo por variância.
 
 ---
 

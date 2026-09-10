@@ -12,12 +12,12 @@ e entregam código Qiskit completo e copiável.
 Dado um dataset (numérico, CSV ou descrição em linguagem natural) e contexto QML
 opcional (tarefa, algoritmo, problema, hardware alvo), o sistema:
 
-1. Analisa o perfil estrutural do dado (dimensão, tipo, distribuição)
-2. Recomenda o melhor entre **7 encodings quânticos**
+1. Analisa o perfil estrutural do dado (dimensão, tipo, distribuição) e, com tabela numérica, estima D2 e o orçamento de qubits `q*` via **FD-ASE** (colunas originais, não PCA)
+2. Recomenda o melhor entre **7 encodings quânticos** (por padrão no recorte `q*`)
 3. Ajusta a recomendação para o hardware alvo (gate error rate, max depth, conectividade)
-4. Justifica a escolha citando métricas concretas: qubits, profundidade de circuito
+4. Justifica a escolha citando métricas concretas: qubits, profundidade de circuito, D2/`q*`
 5. Gera código Python/Qiskit completo e copiável
-6. Simula via `AerSimulator` (CPU, sem hardware real)
+6. Simula via `AerSimulator`; `/v1/compare` reporta **KTA**, **kernel-alive** e um sweep de largura `q`
 7. Responde no idioma do input (PT-BR ou EN)
 
 ---
@@ -54,6 +54,26 @@ Passe `hardware_profile` no request para recomendação NISQ-realista:
 Acima de `gate_error_rate = 1e-3` (limiar p* de Sammartino arXiv:2606.05387),
 encodings profundos são automaticamente substituídos por alternativas mais rasas.
 
+### Orçamento fractal, KTA e kernel-alive
+
+Com um array 2-D (CSV ou `data` tabular), `infer_data_profile` estima a dimensão
+de correlação D2 e escolhe colunas originais cuja dimensão parcial recupera
+D2 (**FD-ASE**, Appel arXiv:2609.00475). O circuito usa `q* = max(2, ceil(D2))`
+qubits por padrão; `apply_fractal_budget=false` deixa o recorte só como aviso no perfil.
+
+`/v1/compare` e `/v1/kernel` devolvem **KTA** quando há labels (alinhamento kernel–classe)
+e, na mesma matriz `K`, o diagnóstico operacional **kernel-alive**: vivo se a fidelidade
+média dos pares euclidianos mais próximos for ≥ 0.25, a razão near/far ≥ 2,
+e a média off-diagonal ≥ 0.03. KTA alto em kernel morto é um aviso: as classes
+alinham numa `K` quase diagonal. Com `sweep_qubit_budget=true` (padrão), o compare
+varre `q` em três vistas (FD-ASE, PCA, prefixo do CSV; probe = angle).
+
+```bash
+curl -s -X POST http://localhost:8080/v1/compare \
+  -H "Content-Type: application/json" \
+  -d '{"data": [[0.1,0.2],[0.15,0.25],[2.5,2.8],[2.6,2.9]], "labels": [0,0,1,1]}'
+```
+
 ---
 
 ## Os agentes
@@ -77,7 +97,7 @@ Mais dois agentes de suporte:
 
 | Camada | O que é | Onde |
 |---|---|---|
-| **Core quântico** | Preprocess, 7 encodings, KTA, otimização de mapeamento de features, simulação | `src/llama_qiskit_agents/quantum/` |
+| **Core quântico** | Preprocess, 7 encodings, FD-ASE/`q*`, KTA, kernel-alive, sweep `q`, otimização de mapeamento, simulação | `src/llama_qiskit_agents/quantum/` |
 | **Tools** | 9 funções + `dispatch_tool` (fonte única) | `agents/tool_registry.py` |
 | **REST one-shot** | Pipelines fixos (Kubeflow, curl) | `/v1/recommend/explain`, `/v1/compare`, … |
 | **Agent harness** | LLM + function calling → tools | `scripts/run_agent_harness.py`, `/v1/agent/chat` |
@@ -171,10 +191,10 @@ Resposta inclui:
 | `GET` | `/health` `/healthz` | Health check |
 | `POST` | `/v1/recommend/explain` | **Principal** — recomendação + explicação + código Qiskit + Bloch sphere |
 | `POST` | `/v1/recommend` | Recomendação estruturada (JSON) |
-| `POST` | `/v1/analyze` | Perfil do dado (DataProfile) |
-| `POST` | `/v1/compare` | Ranking comparativo dos 7 encodings |
-| `POST` | `/v1/compare/csv` | Upload CSV multipart (+ `optimize_features=true` com labels: ordem/seleção/peso) |
-| `POST` | `/v1/kernel` | Matriz de kernel K_{ij} + KTA + heatmap |
+| `POST` | `/v1/analyze` | Perfil do dado (DataProfile, incl. D2, `q*`, colunas FD-ASE) |
+| `POST` | `/v1/compare` | Ranking dos 7 encodings + KTA + kernel-alive + sweep `q` |
+| `POST` | `/v1/compare/csv` | Upload CSV multipart (`optimize_features`, `apply_fractal_budget`, `sweep_qubit_budget`) |
+| `POST` | `/v1/kernel` | Matriz K_ij + KTA + kernel-alive + heatmap |
 | `GET` | `/v1/tools` | Schemas de tools (OpenAI / OpenClaw) |
 | `POST` | `/v1/tools/dispatch` | Executa uma tool (integração agentes) |
 | `GET` | `/v1/tools/openclaw-skill.md` | Skill Markdown para OpenClaw |
@@ -200,9 +220,9 @@ curl -s -X POST http://localhost:8080/v1/kernel \
   }' | python3 -m json.tool
 ```
 
-Resposta inclui `kernel_matrix` (N×N), `stats` (com KTA), `heatmap_b64` (PNG base64)
-e `caption` — tudo que precisa para avaliar se o encoding separa as classes antes de
-treinar qualquer classificador quântico.
+Resposta inclui `kernel_matrix` (N×N), `stats` (KTA e, com N≥4, `kernel_alive` 1/0),
+`heatmap_b64` (PNG base64) e `caption` — para avaliar se o encoding separa classes
+*e* se o kernel ainda tem geometria viva, antes de treinar qualquer classificador.
 
 ---
 
@@ -313,7 +333,7 @@ oc apply -f 00-namespace.yaml
 
 ## Benchmarks (Iris, Breast Cancer, Wine)
 
-Suite reprodutível para **KTA**, ranking de encodings e **otimização ordem/seleção/peso** ([2512.02422](https://arxiv.org/abs/2512.02422)).
+Suite reprodutível para **KTA**, **kernel-alive**, ranking de encodings e **otimização ordem/seleção/peso** ([2512.02422](https://arxiv.org/abs/2512.02422)). O default inclui `breast_cancer_fdase` (30 colunas; KTA no recorte FD-ASE).
 
 ```bash
 pip install -e ".[benchmark]"
@@ -326,13 +346,14 @@ pytest tests/test_benchmarks.py -q                # smoke CI
 | Dataset | Origem | Uso |
 |---------|--------|-----|
 | `iris_binary` | UCI Iris (2 classes) | Rápido, CI |
-| `breast_cancer_top6` | Wisconsin BC, 6 features | Público, médio |
+| `breast_cancer_fdase` | Wisconsin BC, E=30 | Default da suite; KTA/alive no recorte FD-ASE |
+| `breast_cancer_top6` | Wisconsin BC, 6 features | Protocolo por variância (comparação) |
 | `wine_binary` | UCI Wine (2 classes) | 13 features |
 | `synthetic_order` | Gerado | Sensível a permutação de colunas |
 
 Detalhes: [`benchmarks/README.md`](benchmarks/README.md).  
 **Roteiro para apresentar oralmente:** [`benchmarks/PRESENTATION.md`](benchmarks/PRESENTATION.md).  
-**Hardware IBM (~10 min/mês):** [`benchmarks/HARDWARE.md`](benchmarks/HARDWARE.md) — `python scripts/run_hardware_benchmarks.py --preset week1_iris`.
+**Hardware IBM (~10 min/mês):** [`benchmarks/HARDWARE.md`](benchmarks/HARDWARE.md) — Iris angle no `ibm_fez` (histogramas 2026-09-09, kernel-lite 2026-08-30). Preset: `python scripts/run_hardware_benchmarks.py --preset week1_iris`.
 
 ---
 
@@ -353,8 +374,8 @@ Usuário (browser /chat, OpenClaw, curl, Kubeflow)
                     ├── GET /v1/tools + POST /v1/tools/dispatch  (9 tools)
                     ├── POST /v1/agent/chat                        (harness server-side)
                     ├── POST /v1/recommend/explain                 (one-shot, sem LLM)
-                    ├── infer_data_profile() → recommend_encoding()
-                    ├── simulate_encoding_circuit() → compute_kernel() (K_{ij}, KTA)
+                    ├── infer_data_profile() → FD-ASE / q* → recommend_encoding()
+                    ├── simulate_encoding_circuit() → compute_kernel() (K_ij, KTA, kernel-alive)
                     └── dispatch_tool()  ← fonte única quantum/*
 ```
 
@@ -369,12 +390,16 @@ quantum-encoding-agents/
 │   │   ├── encodings.py         # 7 circuit builders + EncodingType enum
 │   │   ├── data_analysis.py     # DataProfile + recommend_encoding
 │   │   ├── problem_context.py   # MLTask, ProblemContext, refine_recommendation
+│   │   ├── fractal.py           # D2 (LiBOC) + FD-ASE + orçamento q*
+│   │   ├── qubit_sweep.py       # sweep q: FD-ASE vs PCA vs prefixo
+│   │   ├── kernel.py            # FidelityStatevectorKernel, KTA, kernel-alive
+│   │   ├── encoding_optimization.py  # ordem/seleção/peso de features (KTA)
 │   │   ├── hardware_profile.py  # HardwareProfile, limiar p*=1e-3 (NISQ-aware)
+│   │   ├── hardware_run.py      # Sampler IBM (histogramas / kernel-lite)
 │   │   ├── explanation.py       # detect_language + narrativas PT/EN + código Qiskit
 │   │   ├── visualization.py     # Bloch sphere via StatevectorSimulator + matplotlib
-│   │   ├── kernel.py            # FidelityStatevectorKernel, KTA, heatmap
 │   │   ├── encoding_ranking.py  # ranking formatado para relatório
-│   │   └── simulate.py          # AerSimulator orchestration
+│   │   └── simulate.py          # AerSimulator + relatório compare
 │   ├── api/
 │   │   ├── app.py               # FastAPI — REST + /v1/tools + /v1/agent/chat
 │   │   ├── schemas.py           # Pydantic models

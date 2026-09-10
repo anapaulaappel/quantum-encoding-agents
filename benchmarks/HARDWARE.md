@@ -14,12 +14,12 @@ export IBM_QUANTUM_BACKEND=ibm_fez   # opcional
 
 | Semana | Preset | O quê | Jobs QPU | Tempo QPU (est.) |
 |--------|--------|-------|----------|------------------|
-| 1 | `week1_iris` | Iris, **angle** (depth 1) | 4 | ~2–5 min + fila |
-| 2 | `week2_synthetic` | Sintético, **dense_angle** | 4 | ~2–5 min + fila |
-| 3 | `week3_breast` | Breast cancer top-6, **angle** | 4 | ~3–6 min + fila |
+| 1 | `week1_iris` | Iris, **angle** (depth 1) | 1 (4 pubs) | ~2–5 min + fila |
+| 2 | `week2_synthetic` | Sintético, **dense_angle** | 1 (4 pubs) | ~2–5 min + fila |
+| 3 | `week3_breast` | Breast cancer top-6, **angle** | 1 (4 pubs) | ~3–6 min + fila |
 | 4 | — | Só simulador / artigo | 0 | 0 |
 
-Cada preset executa **4 circuits**:
+Cada preset empacota **4 circuits** num único job Sampler:
 
 - classe 0 — plano CSV (baseline)
 - classe 0 — plano otimizado (KTA)
@@ -37,6 +37,7 @@ python scripts/run_hardware_benchmarks.py --preset week1_iris --dry-run
 # Esta semana — Iris no hardware
 python scripts/run_hardware_benchmarks.py --preset week1_iris --execute \
   --json benchmarks/results/hardware_iris.json
+# 9 Sep 2026: um Sampler job dagota8mhr3c73e5fb20 (4 pubs) em ibm_fez
 
 # Mês que vem — sintético (ordem de colunas)
 python scripts/run_hardware_benchmarks.py --preset week2_synthetic --execute
@@ -84,4 +85,4 @@ python scripts/run_benchmarks.py --dataset breast_cancer_top6 --no-compare
 ## Future work
 
 - Kernel-lite no hardware: **feito** (Iris angle, 6 pares, 1 job Sampler em `ibm_fez`, 2026-08-30; `benchmarks/results/hardware_kernel_lite.json`)
-- Integrar `job_id` e counts no MLflow / artigo como tabela hardware vs sim — histogramas em `benchmarks/results/hardware_iris.json`
+- Histogramas `week1_iris`: **refeito** 2026-09-09, 1 job Sampler `dagota8mhr3c73e5fb20` (4 pubs) em `ibm_fez`; `benchmarks/results/hardware_iris.json`

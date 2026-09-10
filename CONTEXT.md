@@ -8,11 +8,11 @@
 
 Pacote Python que conecta **Llama Stack** (LLMs com function-calling) ao **Qiskit + Qiskit-Aer** para recomendar, gerar e simular estratégias de **encoding de dados quânticos** (Quantum Machine Learning). Dado um dataset (CSV, array numérico, ou descrição textual) + contexto QML opcional, o agente:
 
-1. Analisa o perfil do dado
-2. Recomenda a melhor estratégia de encoding
+1. Analisa o perfil do dado e, com tabela 2-D, estima D2 → orçamento `q*` via FD-ASE
+2. Recomenda a melhor estratégia de encoding (por padrão no recorte `q*`)
 3. Gera o circuito Qiskit correspondente
-4. Simula via `AerSimulator` (CPU, sem hardware real)
-5. Produz relatório comparativo das 7 estratégias
+4. Simula via `AerSimulator` (CPU). Histogramas e kernel-lite no IBM Quantum: `hardware_run.py` + `scripts/run_hardware_benchmarks.py`
+5. Produz relatório comparativo das 7 estratégias (KTA se labels, kernel-alive, sweep de `q`)
 
 Exposto via **FastAPI** (`/v1/…`), **UI web agentica** (`/chat` → `/v1/agent/chat`) e tools HTTP (`/v1/tools/dispatch`).
 
@@ -35,11 +35,16 @@ llama-qiskit-agents/
 │   └── quantum/
 │       ├── encodings.py        # EncodingType enum + 7 circuit builders
 │       ├── data_analysis.py    # CSV load, DataProfile, recommend_encoding
+│       ├── fractal.py          # D2 (LiBOC) + FD-ASE + FractalBudget
+│       ├── qubit_sweep.py      # sweep q: FD-ASE vs PCA vs prefixo (probe = angle)
+│       ├── preprocessing.py    # min-max ângulo, L2 amplitude, avisos
 │       ├── problem_context.py  # MLTask, ProblemContext, refine_recommendation
 │       ├── hardware_profile.py # HardwareProfile, limiar p*=1e-3 (NISQ-aware)
+│       ├── hardware_run.py     # Sampler IBM (week1_iris / kernel-lite)
 │       ├── explanation.py      # detect_language + narrativas PT/EN + código Qiskit
 │       ├── visualization.py    # Bloch sphere via StatevectorSimulator + matplotlib
-│       ├── kernel.py           # FidelityStatevectorKernel, KTA, heatmap
+│       ├── kernel.py           # FidelityStatevectorKernel, KTA, kernel-alive
+│       ├── encoding_optimization.py  # ordem/seleção/peso por KTA
 │       ├── encoding_ranking.py # Formatação do ranking + nota de medições
 │       ├── simulate.py         # AerSimulator orchestration + format_comparison_report
 │       └── circuits.py         # Bell + simple circuit (demo apenas)
@@ -63,7 +68,7 @@ llama-qiskit-agents/
 | Struct | Arquivo | Tipo | Campos principais |
 |--------|---------|------|-------------------|
 | `EncodingType` | `encodings.py:11` | `str+Enum` | `amplitude`, `angle`, `dense_angle`, `iqp`, `basis`, `data_reuploading`, `custom_feature_map` |
-| `DataProfile` | `data_analysis.py:61` | `@dataclass` | `n_samples`, `n_features`, `is_binary`, `is_categorical`, `is_continuous`, `has_negative`, `description` |
+| `DataProfile` | `data_analysis.py` | `@dataclass` | tipo + D2 + `q*` + `selected_columns` (FD-ASE) + `fractal_selection_applied` |
 | `MLTask` | `problem_context.py:10` | `str+Enum` | `classification`, `clustering`, `encoding_only`, `kernel_method`, `variational`, `unknown` |
 | `ProblemContext` | `problem_context.py:21` | `@dataclass` | `task`, `algorithm`, `raw_hints`, `inferred_note`, `has_explicit_info()` |
 | `SimulationResult` | `simulate.py:28` | `@dataclass` | `encoding_type`, `circuit`, `depth`, `num_qubits`, `counts: dict[str,int]`, `shots` |
@@ -90,6 +95,13 @@ Novo módulo `hardware_profile.py`. Limiar crítico `p* ≈ 1e-3` (Sammartino ar
 - `max_depth_budget` → aviso quando depth estimado excede o budget
 - `max_qubits` → aviso de qubits insuficientes
 
+### Fractal + kernel-alive
+
+- `fractal.py`: D2 via LiBOC; FD-ASE devolve **índices de colunas originais** (não misturas PCA). `q* = max(2, ceil(D2))`. Precisa N≥32 amostras e ≥3 features para FD-ASE.
+- `apply_fractal_budget=false`: D2 e a lista FD-ASE ficam no perfil; o circuito usa a largura original.
+- `kernel.py`: KTA (rótulo) e kernel-alive (geometria, independente de rótulo) na mesma `K`. Alive se near≥0.25, near/far≥2, média off-diag≥0.03 (arXiv:2609.00475).
+- `qubit_sweep.py`: curva de `q` com probe = angle, três vistas (FD-ASE / PCA / prefixo CSV).
+
 ---
 
 ## Algoritmo → Encoding
@@ -108,18 +120,16 @@ Novo módulo `hardware_profile.py`. Limiar crítico `p* ≈ 1e-3` (Sammartino ar
 
 ```
 CSV / array / texto
-  → infer_data_profile()          → DataProfile
-  → recommend_encoding()
+  → infer_data_profile(apply_fractal_budget=True)
+      → DataProfile (+ D2, q*, selected_columns)
+  → recommend_encoding()                    # angle/IQP limitados a q* se recorte ligado
       → infer_problem_context()   → ProblemContext
       → _recommend_encoding_from_data() → EncodingType base
       → refine_recommendation()   → EncodingType final + razão
-  → para cada EncodingType:
-      build_encoding_circuit()    → QuantumCircuit
-      simulate_encoding_circuit() → SimulationResult
+  → compare_embeddings():
+      recorte FD-ASE (se ligado) → KTA + kernel-alive por encoding
+      → run_qubit_budget_sweep() (FD-ASE vs PCA vs prefixo)
   → format_comparison_report()    → str (plain text)
-      → format_encoding_ranking_section()
-      → format_measurements_note_section()
-      → get_encoding_tradeoffs()
 ```
 
 ---
@@ -130,12 +140,12 @@ CSV / array / texto
 |---------------|-----------|
 | `GET /health` / `/healthz` | Health check |
 | `GET /` | Info do serviço |
-| `POST /v1/analyze` | Perfil do dado (`DataInput` JSON) → `ProfileResponse` |
+| `POST /v1/analyze` | Perfil do dado (`DataInput` JSON) → `ProfileResponse` (D2, q*, FD-ASE) |
 | `POST /v1/recommend` | Recomendação (`DataInput` JSON) → `RecommendResponse` |
 | `POST /v1/recommend/explain` | **Principal** — recomendação + explicação PT/EN + código Qiskit + Bloch sphere |
-| `POST /v1/compare` | Ranking completo (`CompareRequest` JSON) → plain text |
-| `POST /v1/compare/csv` | Upload CSV multipart → relatório plain text |
-| `POST /v1/kernel` | Matriz K_{ij} + KTA + heatmap PNG |
+| `POST /v1/compare` | Ranking + KTA + kernel-alive + sweep q (`CompareRequest`) → plain text |
+| `POST /v1/compare/csv` | Upload CSV multipart (`optimize_features`, `apply_fractal_budget`, `sweep_qubit_budget`) |
+| `POST /v1/kernel` | Matriz K_ij + KTA + kernel-alive + heatmap PNG |
 | `GET /v1/tools` | Schemas OpenAI / OpenClaw |
 | `POST /v1/tools/dispatch` | Executa tool (integração agentes) |
 | `POST /v1/agent/chat` | Turno LLM + tools (env AGENT_*) |
@@ -156,9 +166,9 @@ CSV / array / texto
 2. `recommend_embedding_strategy` — recomendação (+ hardware_profile opcional)
 3. `generate_qiskit_circuit` — diagrama ASCII
 4. `simulate_circuit` — contagens Aer
-5. `compare_embeddings_report` — ranking 7 encodings
-6. `compare_csv_embeddings` — CSV texto + KTA se labels
-7. `compute_quantum_kernel` — K_{ij} + stats + KTA
+5. `compare_embeddings_report` — ranking 7 encodings + KTA + kernel-alive + sweep q
+6. `compare_csv_embeddings` — CSV texto + KTA se labels + flags fractal/sweep
+7. `compute_quantum_kernel` — K_ij + stats + KTA + kernel-alive
 8. `explain_tradeoffs`
 9. `scenarios_guide`
 
@@ -214,12 +224,13 @@ python scripts/run_quantum_example.py
 ## Decisões de Design Notáveis
 
 - **Llama Stack é opcional** — pipeline quantum e modo Direto da UI funcionam sem LLM; modo Agente em `/chat` requer `AGENT_*` + Ollama/vLLM
-- **AerSimulator apenas** — sem hardware quântico real; `build-essential` no Docker para compilar extensões nativas
+- **Simulador por padrão** — Aer/statevector no compare e no kernel; QPU opcional via `.[ibm]` (`ibm_fez`, histogramas + kernel-lite, cota ~10 min/mês)
 - **Falhas silenciosas** — em `compare_embeddings()`, encodings que falham são pulados (`except Exception: continue`)
 - **Relatório plain text** — `PlainTextResponse`; fácil de exibir em terminal, UI e contexto LLM
 - **Bilingue PT-BR + EN** — detecção de keywords em ambos os idiomas em `data_analysis.py` e `problem_context.py`
 - **OpenShift rootless** — `chgrp/chmod g=u` + `USER 1001` no Dockerfile
 - **CSV tolerante** — células não-numéricas e cabeçalhos texto são ignorados automaticamente
+- **FD-ASE ≠ PCA** — devolve colunas originais; `apply_fractal_budget=false` só desliga o recorte no circuito
 
 ---
 
@@ -227,12 +238,13 @@ python scripts/run_quantum_example.py
 
 | Struct | Arquivo | Tipo | Campos principais |
 |--------|---------|------|-------------------|
-| `EncodingType` | `encodings.py:11` | `str+Enum` | `amplitude`, `angle`, `dense_angle`, `iqp`, `basis`, `data_reuploading`, `custom_feature_map` |
-| `DataProfile` | `data_analysis.py:61` | `@dataclass` | `n_samples`, `n_features`, `is_binary`, `is_categorical`, `is_continuous`, `has_negative`, `description` |
+| `DataProfile` | `data_analysis.py` | `@dataclass` | tipo + D2 + `q*` + `selected_columns` + `fractal_selection_applied` |
 | `HardwareProfile` | `hardware_profile.py` | `@dataclass` | `gate_error_rate`, `max_depth_budget`, `max_qubits`, `connectivity`, `backend_name` |
-| `MLTask` | `problem_context.py:10` | `str+Enum` | `classification`, `clustering`, `encoding_only`, `kernel_method`, `variational`, `unknown` |
-| `ProblemContext` | `problem_context.py:21` | `@dataclass` | `task`, `algorithm`, `raw_hints`, `inferred_note`, `has_explicit_info()` |
-| `SimulationResult` | `simulate.py:28` | `@dataclass` | `encoding_type`, `circuit`, `depth`, `num_qubits`, `counts: dict[str,int]`, `shots` |
+| `FractalBudget` | `fractal.py` | `@dataclass` | `intrinsic_dimension`, `qubit_budget`, `selected_columns` |
+| `KernelGeometry` | `kernel.py` | `@dataclass` | `fid_near`, `fid_far`, `near_far_ratio`, `mean_offdiag`, `kernel_alive` |
+| `MLTask` | `problem_context.py` | `str+Enum` | `classification`, `clustering`, `encoding_only`, `kernel_method`, `variational`, `unknown` |
+| `ProblemContext` | `problem_context.py` | `@dataclass` | `task`, `algorithm`, `raw_hints`, `inferred_note`, `has_explicit_info()` |
+| `SimulationResult` | `simulate.py` | `@dataclass` | `encoding_type`, `circuit`, `depth`, `num_qubits`, `counts: dict[str,int]`, `shots` |
 | `HardwareProfileInput` | `api/schemas.py` | Pydantic | espelho do dataclass para API HTTP |
 
 ## Estado atual do roadmap
@@ -240,8 +252,12 @@ python scripts/run_quantum_example.py
 - [x] **A1a** — `dense_angle` encoding (Sammartino 2026)
 - [x] **A1b** — `IQP` encoding (Havlíček 2019)
 - [x] **A2** — `hardware_profile` NISQ-aware (p* threshold)
-- [x] **B1** — Bloch sphere visualization (`matplotlib` + statevector, commit 7632972)
-- [x] **B2** — `POST /v1/kernel` (FidelityStatevectorKernel + heatmap, commit 738b8ad)
+- [x] **B1** — Bloch sphere visualization (`matplotlib` + statevector)
+- [x] **B2** — `POST /v1/kernel` (FidelityStatevectorKernel + heatmap + kernel-alive)
 - [x] **C1** — Kubeflow Pipeline para RHOAI (deploy/rhoai/)
+- [x] **C11** — Otimização ordem/seleção/peso de features por KTA
+- [x] **D2 / FD-ASE** — orçamento `q*` antes do encoding e do KTA (arXiv:2609.00475)
+- [x] **Sweep q** — FD-ASE vs PCA vs prefixo no `/v1/compare`
+- [x] **IBM Quantum** — `ibm_fez`: histogramas Iris (2026-09-09) + kernel-lite (2026-08-30)
 
-Referências chave: arXiv:2606.05387 (Sammartino survey), Nature 2019 (Havlíček kernel).
+Referências chave: arXiv:2606.05387 (Sammartino survey), Nature 2019 (Havlíček kernel), arXiv:2609.00475 (D2 / kernel-alive).

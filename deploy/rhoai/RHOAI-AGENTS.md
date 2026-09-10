@@ -142,9 +142,9 @@ env:
 
 ## Relação com o artigo
 
-- Compare dispatch expõe o mesmo ranking KTA descrito no artigo (`K_{ij}`, simulabilidade).
+- Compare dispatch expõe o mesmo ranking KTA + kernel-alive descrito no artigo (`K_ij`, simulabilidade, FD-ASE).
 - O agente resume resultados para o pesquisador — alinhado à §4.1 (tools + `/chat`).
-- Otimização de **ordem/peso de features** ([arXiv:2512.02422](https://arxiv.org/abs/2512.02422)) permanece future work; o pipeline agentico é o gancho natural para buscas guiadas por KTA via `compare_csv_embeddings`.
+- Otimização de **ordem/peso de features** ([arXiv:2512.02422](https://arxiv.org/abs/2512.02422)) está no core (`encoding_optimization.py`) e na tool `compare_csv_embeddings` (`optimize_features=true`).
 
 ---
 

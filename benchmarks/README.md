@@ -1,6 +1,6 @@
 # Benchmark suite
 
-Conjunto reprodutível para avaliar **KTA**, **ranking de encodings** e **otimização de ordem/seleção/peso** ([arXiv:2512.02422](https://arxiv.org/abs/2512.02422)).
+Conjunto reprodutível para avaliar **KTA**, **kernel-alive**, **ranking de encodings** e **otimização de ordem/seleção/peso** ([arXiv:2512.02422](https://arxiv.org/abs/2512.02422)). A suite default recorta Breast Cancer via **FD-ASE** (`q*`) antes do KTA.
 
 ## Instalação
 
@@ -15,7 +15,8 @@ Requer `scikit-learn` (extra opcional, não entra no core da API).
 | Slug | Origem | Amostras (default) | Features | Notas |
 |------|--------|-------------------|----------|-------|
 | `iris_binary` | UCI Iris via sklearn | 50 | 4 | Setosa vs versicolor — **rápido**, bom para CI |
-| `breast_cancer_top6` | Wisconsin BC | 40 | 6 (top variância) | Binário; reduz custo O(d²) do IQP |
+| `breast_cancer_fdase` | Wisconsin BC | 64 | 30 (FD-ASE no runner) | **Default da suite** — KTA/alive no recorte `q*` |
+| `breast_cancer_top6` | Wisconsin BC | 40 | 6 (top variância) | Protocolo por variância; reduz custo O(d²) do IQP |
 | `wine_binary` | UCI Wine | 40 | 13 | Classes 0 vs 1 |
 | `synthetic_order` | Gerado | 24 | 4 | Ruído antes do sinal — sensível a permutação |
 
@@ -44,6 +45,7 @@ Por dataset:
 - **baseline_best_kta** — melhor KTA entre os 7 encodings (ordem CSV original)
 - **optimization_delta** — ganho KTA na busca ordem/seleção/peso (`optimize_feature_encoding`)
 - **compare_delta** — melhor KTA no ranking do compare com vs. sem `optimize_features`
+- **kernel-alive** — geometria near/far na mesma `K` (independente de rótulo); ver relatório `/v1/compare`
 
 ## Testes (pytest)
 
@@ -64,7 +66,7 @@ python scripts/run_hardware_benchmarks.py --preset week1_iris --dry-run
 python scripts/run_hardware_benchmarks.py --preset week1_iris --execute
 ```
 
-Presets mensais: `week1_iris`, `week2_synthetic`, `week3_breast` — ver [`HARDWARE.md`](HARDWARE.md).
+Presets mensais: `week1_iris` (**feito** 2026-09-09, job `dagota8mhr3c73e5fb20` em `ibm_fez`), `week2_synthetic`, `week3_breast` — ver [`HARDWARE.md`](HARDWARE.md). Kernel-lite (6 pares) em 2026-08-30.
 
 ## Uso no artigo
 

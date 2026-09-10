@@ -4,9 +4,9 @@ Benchmark em hardware IBM — preset enxuto para ~10 min/mês de QPU.
 Fluxo:
   1. Simulador: otimiza plano de features (KTA) — benchmarks/runner.py
   2. Transpile-only: depth/2q no backend alvo (grátis)
-  3. Execute (opcional): poucos jobs — 1 amostra/classe × baseline vs otimizado
+  3. Execute (opcional): um Sampler job com 4 pubs — 1 amostra/classe × baseline vs otimizado
 
-Preset --monthly: iris_binary, angle encoding, 4 jobs, 512 shots.
+Preset --monthly: iris_binary, angle encoding, 1 job Sampler (4 pubs), 512 shots.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from llama_qiskit_agents.quantum.hardware_run import (
     TranspileStats,
     build_sample_encoding_circuit,
     resolve_backend_name,
-    run_encoding_circuit,
+    run_encoding_circuits,
     transpile_encoding_circuit,
 )
 from llama_qiskit_agents.quantum.kernel import compute_kta_by_encoding
@@ -241,6 +241,7 @@ def run_hardware_benchmark(
         "optimized": _bounds_for_plan(optimized_plan, X_fit),
     }
 
+    circuits: list = []
     for spec in specs:
         outcome = HardwareJobOutcome(spec=spec, executed=execute)
         try:
@@ -251,18 +252,35 @@ def run_hardware_benchmark(
             )
             _, tstats = transpile_encoding_circuit(qc, backend_name=backend)
             outcome.transpile = tstats
+            circuits.append(qc)
+        except IBMHardwareError as exc:
+            outcome.error = str(exc)
+            circuits.append(None)
+        except Exception as exc:
+            outcome.error = f"{type(exc).__name__}: {exc}"
+            circuits.append(None)
+        result.jobs.append(outcome)
 
-            if execute:
-                outcome.run = run_encoding_circuit(
-                    qc,
+    if execute:
+        ready = [(i, qc) for i, qc in enumerate(circuits) if qc is not None]
+        if ready:
+            try:
+                runs = run_encoding_circuits(
+                    [qc for _, qc in ready],
                     backend_name=backend,
                     shots=shots,
                 )
-        except IBMHardwareError as exc:
-            outcome.error = str(exc)
-        except Exception as exc:
-            outcome.error = f"{type(exc).__name__}: {exc}"
-        result.jobs.append(outcome)
+                for (idx, _), run in zip(ready, runs):
+                    result.jobs[idx].run = run
+            except IBMHardwareError as exc:
+                for idx, _ in ready:
+                    if result.jobs[idx].error is None:
+                        result.jobs[idx].error = str(exc)
+            except Exception as exc:
+                msg = f"{type(exc).__name__}: {exc}"
+                for idx, _ in ready:
+                    if result.jobs[idx].error is None:
+                        result.jobs[idx].error = msg
 
     result.backend = backend
     return result
