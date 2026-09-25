@@ -33,25 +33,17 @@ spec:
             - name: PORT
               value: "8080"
             - name: CORS_ORIGINS
-              # Permite apenas o pod do OpenClaw chamar a API internamente.
-              # Troque pelo domínio real se precisar de acesso externo.
-              value: "http://localhost:18789,https://openclaw-openclaw.apps.<SEU_DOMINIO>"
-            # Llama Stack é opcional — o pipeline quantum funciona sem ele.
-            # Modo agentico (/v1/agent/chat, UI /chat): configure LLM (ex.: Ollama sidecar):
-            # - name: AGENT_BACKEND
-            #   value: "ollama"
-            # - name: AGENT_MODEL
-            #   value: "qwen2.5-coder:14b"
-            # - name: OLLAMA_HOST
-            #   value: "http://ollama.openclaw.svc.cluster.local:11434"
-            # Descomente se quiser conectar ao Llama Stack:
-            # - name: LLAMA_STACK_CLIENT_BASE_URL
-            #   value: "http://llama-stack.openclaw.svc.cluster.local:8321"
-            # - name: LLAMA_STACK_CLIENT_API_KEY
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: openclaw-secrets
-            #       key: LLAMA_STACK_CLIENT_API_KEY
+              value: "http://localhost:18789,https://openclaw-openclaw.apps.ocp.kzjp4.sandbox5236.opentlc.com"
+            - name: AGENT_BACKEND
+              value: "openai_compatible"
+            - name: OPENAI_API_BASE
+              value: "https://gemma-4-31b-it-kserve-workload-svc.ai-project.svc.cluster.local:8000/v1"
+            - name: AGENT_MODEL
+              value: "gemma-4-31b-it"
+            - name: OPENAI_API_KEY
+              value: "not-used"
+            - name: SSL_CERT_FILE
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
           readinessProbe:
             httpGet:
               path: /healthz
